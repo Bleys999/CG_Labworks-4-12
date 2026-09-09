@@ -8,7 +8,7 @@ public:
     static constexpr UINT ColorTargetCount = 3;
     static constexpr DXGI_FORMAT AlbedoFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     static constexpr DXGI_FORMAT NormalFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    static constexpr DXGI_FORMAT WorldPosFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    static constexpr DXGI_FORMAT WorldPosFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
     static constexpr DXGI_FORMAT DepthFormat = DXGI_FORMAT_D32_FLOAT;
 
     GBuffer() = default;
@@ -31,6 +31,10 @@ public:
 
     ID3D12DescriptorHeap* SrvHeap() const { return mSrvHeap.Get(); }
     D3D12_GPU_DESCRIPTOR_HANDLE SrvGpuStart() const { return mSrvGpuStart; }
+
+    ID3D12Resource* AlbedoResource() const { return mAlbedo.Get(); }
+    ID3D12Resource* NormalResource() const { return mNormal.Get(); }
+    ID3D12Resource* WorldPosResource() const { return mWorldPos.Get(); }
 
     UINT Width() const { return mWidth; }
     UINT Height() const { return mHeight; }

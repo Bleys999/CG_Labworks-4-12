@@ -102,6 +102,15 @@ void MainApp::Draw(const GameTimer& gt)
 
     mRendering.UpdateLightingConstants(mCamera);
 
+    mRendering.BeginShadowPass(mCommandList.Get());
+    mRendering.ApplyShadowPass(mCommandList.Get());
+    for (UINT i = 0; i < (UINT)Config::ShadowCascadeCount; ++i)
+    {
+        mRendering.SetShadowCascadeTarget(mCommandList.Get(), i);
+        mScene.DrawShadow(mCommandList.Get());
+    }
+    mRendering.EndShadowPass(mCommandList.Get());
+
     mCommandList->RSSetViewports(1, &mScreenViewport);
     mCommandList->RSSetScissorRects(1, &mScissorRect);
 

@@ -83,6 +83,7 @@ void BoxObject::UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX
     objConstants.DiffuseFactor = mDiffuseFactor;
     objConstants.UVScale = XMFLOAT2(1.0f, 1.0f);
     objConstants.UVOffset = XMFLOAT2(0.0f, 0.0f);
+    objConstants.ReceiveShadow = 0.0f;
 
     mObjectCB->CopyData(0, objConstants);
 }
@@ -104,6 +105,17 @@ void BoxObject::Draw(ID3D12GraphicsCommandList* cmdList)
     cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+    cmdList->DrawIndexedInstanced(mGeometry->DrawArgs["box"].IndexCount, 1, 0, 0, 0);
+}
+
+void BoxObject::DrawShadow(ID3D12GraphicsCommandList* cmdList)
+{
+    if (!mGeometry || !mVisible || !mObjectCB) return;
+
+    cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
+    cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
+    cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmdList->DrawIndexedInstanced(mGeometry->DrawArgs["box"].IndexCount, 1, 0, 0, 0);
 }
 

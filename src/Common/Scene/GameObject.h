@@ -15,6 +15,7 @@ public:
 
     virtual void Update(const GameTimer& gt) = 0;
     virtual void Draw(ID3D12GraphicsCommandList* cmdList) = 0;
+    virtual void DrawShadow(ID3D12GraphicsCommandList*) {}
     virtual void UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj) = 0;
 
     virtual bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList) { return true; }

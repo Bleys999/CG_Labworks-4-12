@@ -1,4 +1,7 @@
 #include "RenderingSystem.h"
+#include "../Core/Config.h"
+#include <cmath>
+#include <algorithm>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -17,64 +20,115 @@ namespace
 
 bool RenderingSystem::Initialize(ID3D12Device* device)
 {
+    mDevice = device;
     mLightingCB = std::make_unique<UploadBuffer<DeferredLightingConstants>>(device, 1, true);
+    mShadowPassCB = std::make_unique<UploadBuffer<ShadowPassConstants>>(device, Config::ShadowCascadeCount, true);
     InitDefaultLights();
+    CreateShadowMaps(device);
     BuildGeometryPass(device);
     BuildTessellationPass(device);
+    BuildShadowPass(device);
     BuildLightingPass(device);
+    UpdateLightingSrvs(device);
     return true;
 }
 
 void RenderingSystem::Resize(ID3D12Device* device, UINT width, UINT height)
 {
     mGBuffer.Resize(device, width, height);
+    UpdateLightingSrvs(device);
 }
 
 void RenderingSystem::InitDefaultLights()
 {
-    mLightingCpu.DirectionalDir = { 0.2f, -1.0f, 0.15f, 0.0f };
-    mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 0.45f };
-    mLightingCpu.AmbientColor = { 0.08f, 0.08f, 0.09f, 1.0f };
+    mLightingCpu.DirectionalDir = { -0.48f, -0.72f, 0.50f, 0.0f };
+    mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 2.1f };
+    mLightingCpu.AmbientColor = { 0.10f, 0.10f, 0.11f, 1.0f };
 
-    mLightingCpu.PointCount = 6;
-    mLightingCpu.PointPosRange[0] = { -5.0f, 6.5f, 0.0f, 22.0f };
-    mLightingCpu.PointColorIntensity[0] = { 1.0f, 0.15f, 0.1f, 5.5f };
-    mLightingCpu.PointPosRange[1] = { 5.0f, 6.5f, 0.0f, 22.0f };
-    mLightingCpu.PointColorIntensity[1] = { 0.12f, 0.35f, 1.0f, 5.5f };
-    mLightingCpu.PointPosRange[2] = { 0.0f, 6.5f, 5.0f, 22.0f };
-    mLightingCpu.PointColorIntensity[2] = { 0.12f, 1.0f, 0.22f, 5.0f };
-    mLightingCpu.PointPosRange[3] = { 0.0f, 6.5f, -5.0f, 22.0f };
-    mLightingCpu.PointColorIntensity[3] = { 1.0f, 0.85f, 0.12f, 5.0f };
-    mLightingCpu.PointPosRange[4] = { 0.0f, 7.5f, 0.0f, 18.0f };
-    mLightingCpu.PointColorIntensity[4] = { 1.0f, 0.15f, 0.85f, 4.5f };
-    mLightingCpu.PointPosRange[5] = { -3.5f, 6.0f, -3.5f, 20.0f };
-    mLightingCpu.PointColorIntensity[5] = { 0.15f, 0.95f, 1.0f, 4.5f };
+    mLightingCpu.PointCount = 4;
+    mLightingCpu.PointPosRange[0] = { -6.0f, 7.0f, 0.0f, 16.0f };
+    mLightingCpu.PointColorIntensity[0] = { 1.0f, 0.25f, 0.18f, 0.55f };
+    mLightingCpu.PointPosRange[1] = { 6.0f, 7.0f, 0.0f, 16.0f };
+    mLightingCpu.PointColorIntensity[1] = { 0.18f, 0.40f, 1.0f, 0.55f };
+    mLightingCpu.PointPosRange[2] = { 0.0f, 7.0f, 6.0f, 16.0f };
+    mLightingCpu.PointColorIntensity[2] = { 0.18f, 1.0f, 0.28f, 0.45f };
+    mLightingCpu.PointPosRange[3] = { 0.0f, 7.0f, -6.0f, 16.0f };
+    mLightingCpu.PointColorIntensity[3] = { 1.0f, 0.85f, 0.20f, 0.45f };
 
-    mLightingCpu.SpotCount = 2;
-    mLightingCpu.SpotPosRange[0] = { -2.0f, 11.0f, -2.0f, 35.0f };
-    mLightingCpu.SpotDirCosine[0] = { 0.15f, -1.0f, 0.25f, 0.72f };
-    mLightingCpu.SpotColorIntensity[0] = { 0.35f, 0.7f, 1.0f, 4.0f };
-    mLightingCpu.SpotPosRange[1] = { 3.0f, 11.0f, 2.0f, 35.0f };
-    mLightingCpu.SpotDirCosine[1] = { -0.2f, -1.0f, -0.15f, 0.72f };
-    mLightingCpu.SpotColorIntensity[1] = { 1.0f, 0.55f, 0.15f, 4.0f };
+    mLightingCpu.SpotCount = 0;
 }
 
 void RenderingSystem::UpdateLightingConstants(const Camera& camera)
 {
     XMVECTOR eye = camera.GetPosition();
     XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraWorld), eye);
+    XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraLook), camera.GetLook());
+    UpdateShadowCascades(camera);
+    mLightingCpu.ShadowParams = XMFLOAT4(1.0f / (float)Config::ShadowMapSize, 0.0025f, (float)Config::ShadowCascadeCount, 0.04f);
     mLightingCB->CopyData(0, mLightingCpu);
 }
 
 void RenderingSystem::ApplyGeometryPass(ID3D12GraphicsCommandList* cmdList) const
 {
     cmdList->SetGraphicsRootSignature(mGeometryRootSignature.Get());
+    cmdList->SetPipelineState(mGeometryPSO.Get());
 }
 
 void RenderingSystem::ApplyTessellationPass(ID3D12GraphicsCommandList* cmdList) const
 {
     cmdList->SetGraphicsRootSignature(mTessellationRootSignature.Get());
     cmdList->SetPipelineState(mTessellationPSO.Get());
+}
+
+void RenderingSystem::ApplyShadowPass(ID3D12GraphicsCommandList* cmdList) const
+{
+    cmdList->SetGraphicsRootSignature(mShadowRootSignature.Get());
+    cmdList->SetPipelineState(mShadowPSO.Get());
+}
+
+void RenderingSystem::BeginShadowPass(ID3D12GraphicsCommandList* cmdList)
+{
+    if (mShadowShaderRead)
+    {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            mShadowMaps.Get(),
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        cmdList->ResourceBarrier(1, &barrier);
+        mShadowShaderRead = false;
+    }
+}
+
+void RenderingSystem::EndShadowPass(ID3D12GraphicsCommandList* cmdList)
+{
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        mShadowMaps.Get(),
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cmdList->ResourceBarrier(1, &barrier);
+    mShadowShaderRead = true;
+}
+
+void RenderingSystem::SetShadowCascadeTarget(ID3D12GraphicsCommandList* cmdList, UINT cascadeIndex) const
+{
+    cmdList->RSSetViewports(1, &mShadowViewport);
+    cmdList->RSSetScissorRects(1, &mShadowScissor);
+    cmdList->OMSetRenderTargets(0, nullptr, FALSE, &mShadowDsv[cascadeIndex]);
+    cmdList->ClearDepthStencilView(mShadowDsv[cascadeIndex], D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+    const UINT cbSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ShadowPassConstants));
+    cmdList->SetGraphicsRootConstantBufferView(
+        1, mShadowPassCB->Resource()->GetGPUVirtualAddress() + cascadeIndex * cbSize);
+}
+
+XMMATRIX RenderingSystem::GetCascadeView(UINT cascadeIndex) const
+{
+    return XMLoadFloat4x4(&mCascadeView[cascadeIndex]);
+}
+
+XMMATRIX RenderingSystem::GetCascadeProj(UINT cascadeIndex) const
+{
+    return XMLoadFloat4x4(&mCascadeProj[cascadeIndex]);
 }
 
 void RenderingSystem::DrawDeferredLighting(
@@ -86,11 +140,11 @@ void RenderingSystem::DrawDeferredLighting(
     cmdList->SetGraphicsRootSignature(mLightingRootSignature.Get());
     cmdList->SetPipelineState(mLightingPSO.Get());
 
-    ID3D12DescriptorHeap* heaps[] = { mGBuffer.SrvHeap() };
+    ID3D12DescriptorHeap* heaps[] = { mLightingSrvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
 
     cmdList->SetGraphicsRootConstantBufferView(0, mLightingCB->Resource()->GetGPUVirtualAddress());
-    cmdList->SetGraphicsRootDescriptorTable(1, mGBuffer.SrvGpuStart());
+    cmdList->SetGraphicsRootDescriptorTable(1, mLightingSrvHeap->GetGPUDescriptorHandleForHeapStart());
 
     cmdList->RSSetViewports(1, &viewport);
     cmdList->RSSetScissorRects(1, &scissor);
@@ -266,6 +320,254 @@ void RenderingSystem::BuildTessellationPass(ID3D12Device* device)
     ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mTessellationPSO)));
 }
 
+void RenderingSystem::CreateShadowMaps(ID3D12Device* device)
+{
+    const UINT size = Config::ShadowMapSize;
+    const UINT cascades = (UINT)Config::ShadowCascadeCount;
+
+    mShadowViewport = { 0.0f, 0.0f, (float)size, (float)size, 0.0f, 1.0f };
+    mShadowScissor = { 0, 0, (LONG)size, (LONG)size };
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = size;
+    desc.Height = size;
+    desc.DepthOrArraySize = (UINT16)cascades;
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_R32_TYPELESS;
+    desc.SampleDesc.Count = 1;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE clear = {};
+    clear.Format = DXGI_FORMAT_D32_FLOAT;
+    clear.DepthStencil.Depth = 1.0f;
+    clear.DepthStencil.Stencil = 0;
+
+    ThrowIfFailed(device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &clear,
+        IID_PPV_ARGS(&mShadowMaps)));
+
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+    dsvHeapDesc.NumDescriptors = cascades;
+    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    ThrowIfFailed(device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mShadowDsvHeap)));
+
+    UINT dsvInc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE dsv(mShadowDsvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    for (UINT i = 0; i < cascades; ++i)
+    {
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+        dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+        dsvDesc.Texture2DArray.MipSlice = 0;
+        dsvDesc.Texture2DArray.FirstArraySlice = i;
+        dsvDesc.Texture2DArray.ArraySize = 1;
+        mShadowDsv[i] = dsv;
+        device->CreateDepthStencilView(mShadowMaps.Get(), &dsvDesc, dsv);
+        dsv.Offset(1, dsvInc);
+    }
+
+    mShadowShaderRead = false;
+}
+
+void RenderingSystem::UpdateLightingSrvs(ID3D12Device* device)
+{
+    if (!mGBuffer.AlbedoResource() || !mShadowMaps)
+        return;
+
+    if (!mLightingSrvHeap)
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+        heapDesc.NumDescriptors = 4;
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mLightingSrvHeap)));
+    }
+
+    UINT inc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE cpu(mLightingSrvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+    srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Texture2D.MipLevels = 1;
+
+    srv.Format = GBuffer::AlbedoFormat;
+    device->CreateShaderResourceView(mGBuffer.AlbedoResource(), &srv, cpu);
+    cpu.Offset(1, inc);
+
+    srv.Format = GBuffer::NormalFormat;
+    device->CreateShaderResourceView(mGBuffer.NormalResource(), &srv, cpu);
+    cpu.Offset(1, inc);
+
+    srv.Format = GBuffer::WorldPosFormat;
+    device->CreateShaderResourceView(mGBuffer.WorldPosResource(), &srv, cpu);
+    cpu.Offset(1, inc);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC shadowSrv = {};
+    shadowSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    shadowSrv.Format = DXGI_FORMAT_R32_FLOAT;
+    shadowSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+    shadowSrv.Texture2DArray.MostDetailedMip = 0;
+    shadowSrv.Texture2DArray.MipLevels = 1;
+    shadowSrv.Texture2DArray.FirstArraySlice = 0;
+    shadowSrv.Texture2DArray.ArraySize = (UINT)Config::ShadowCascadeCount;
+    shadowSrv.Texture2DArray.ResourceMinLODClamp = 0.0f;
+    device->CreateShaderResourceView(mShadowMaps.Get(), &shadowSrv, cpu);
+}
+
+void RenderingSystem::UpdateShadowCascades(const Camera& camera)
+{
+    const int nCascades = Config::ShadowCascadeCount;
+    const float nearZ = camera.GetNearZ();
+    const float farZ = Config::ShadowDistance;
+    const float lambda = Config::ShadowSplitLambda;
+
+    float splits[5];
+    splits[0] = nearZ;
+    for (int i = 1; i <= nCascades; ++i)
+    {
+        float p = (float)i / (float)nCascades;
+        float logSplit = nearZ * powf(farZ / nearZ, p);
+        float uniSplit = nearZ + (farZ - nearZ) * p;
+        splits[i] = logSplit * lambda + uniSplit * (1.0f - lambda);
+    }
+    mLightingCpu.CascadeSplits = XMFLOAT4(splits[1], splits[2], splits[3], splits[4]);
+
+    XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.DirectionalDir)));
+    XMVECTOR worldUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    if (fabsf(XMVectorGetX(XMVector3Dot(lightDir, worldUp))) > 0.99f)
+        worldUp = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+
+    XMVECTOR camPos = camera.GetPosition();
+    XMVECTOR camRight = camera.GetRight();
+    XMVECTOR camUp = camera.GetUp();
+    XMVECTOR camLook = camera.GetLook();
+    float fovY = camera.GetFovY();
+    float aspect = camera.GetAspect();
+    float tanHalf = tanf(0.5f * fovY);
+
+    const float mapSize = (float)Config::ShadowMapSize;
+
+    for (int i = 0; i < nCascades; ++i)
+    {
+        float zn = splits[i];
+        float zf = splits[i + 1];
+        float ny = tanHalf * zn;
+        float nx = ny * aspect;
+        float fy = tanHalf * zf;
+        float fx = fy * aspect;
+
+        XMVECTOR corners[8];
+        corners[0] = camPos + camLook * zn + camUp * ny - camRight * nx;
+        corners[1] = camPos + camLook * zn + camUp * ny + camRight * nx;
+        corners[2] = camPos + camLook * zn - camUp * ny - camRight * nx;
+        corners[3] = camPos + camLook * zn - camUp * ny + camRight * nx;
+        corners[4] = camPos + camLook * zf + camUp * fy - camRight * fx;
+        corners[5] = camPos + camLook * zf + camUp * fy + camRight * fx;
+        corners[6] = camPos + camLook * zf - camUp * fy - camRight * fx;
+        corners[7] = camPos + camLook * zf - camUp * fy + camRight * fx;
+
+        XMVECTOR center = XMVectorZero();
+        for (int c = 0; c < 8; ++c)
+            center += corners[c];
+        center *= 0.125f;
+
+        float radius = 0.0f;
+        for (int c = 0; c < 8; ++c)
+        {
+            float d = XMVectorGetX(XMVector3Length(corners[c] - center));
+            radius = (std::max)(radius, d);
+        }
+        radius = ceilf(radius * 16.0f) / 16.0f;
+
+        XMVECTOR eye = center - lightDir * (radius + Config::ShadowNearPad);
+        XMMATRIX view = XMMatrixLookAtLH(eye, center, worldUp);
+
+        float l = -radius;
+        float r = radius;
+        float b = -radius;
+        float t = radius;
+        float texel = (radius * 2.0f) / mapSize;
+        l = floorf(l / texel) * texel;
+        r = floorf(r / texel) * texel;
+        b = floorf(b / texel) * texel;
+        t = floorf(t / texel) * texel;
+
+        XMMATRIX proj = XMMatrixOrthographicOffCenterLH(l, r, b, t, 0.0f, radius * 2.0f + Config::ShadowNearPad);
+        XMMATRIX vp = view * proj;
+
+        XMStoreFloat4x4(&mCascadeView[i], view);
+        XMStoreFloat4x4(&mCascadeProj[i], proj);
+        XMStoreFloat4x4(&mLightingCpu.CascadeViewProj[i], XMMatrixTranspose(vp));
+
+        ShadowPassConstants pass{};
+        XMStoreFloat4x4(&pass.LightViewProj, XMMatrixTranspose(vp));
+        mShadowPassCB->CopyData(i, pass);
+    }
+}
+
+void RenderingSystem::BuildShadowPass(ID3D12Device* device)
+{
+    ComPtr<ID3DBlob> errors;
+    HRESULT hr = D3DCompileFromFile(L"Shaders\\shadow.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
+        "VS", "vs_5_0", CompileFlags(), 0, &mShadowVs, &errors);
+    if (FAILED(hr))
+    {
+        if (errors)
+            OutputDebugStringA((char*)errors->GetBufferPointer());
+        ThrowIfFailed(hr);
+    }
+
+    CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+    slotRootParameter[0].InitAsConstantBufferView(0);
+    slotRootParameter[1].InitAsConstantBufferView(1);
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0, nullptr,
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+    ComPtr<ID3DBlob> serializedRootSig;
+    ComPtr<ID3DBlob> errorBlob;
+    ThrowIfFailed(D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+        serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf()));
+    ThrowIfFailed(device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(),
+        serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&mShadowRootSignature)));
+
+    D3D12_INPUT_ELEMENT_DESC layout[] =
+    {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout = { layout, 1 };
+    psoDesc.pRootSignature = mShadowRootSignature.Get();
+    psoDesc.VS = { reinterpret_cast<BYTE*>(mShadowVs->GetBufferPointer()), mShadowVs->GetBufferSize() };
+    psoDesc.PS = { nullptr, 0 };
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    psoDesc.RasterizerState.DepthBias = 0;
+    psoDesc.RasterizerState.SlopeScaledDepthBias = 2.0f;
+    psoDesc.RasterizerState.DepthBiasClamp = 0.0f;
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 0;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.SampleDesc.Count = 1;
+    psoDesc.SampleDesc.Quality = 0;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mShadowPSO)));
+}
+
 void RenderingSystem::BuildLightingPass(ID3D12Device* device)
 {
     ComPtr<ID3DBlob> errors;
@@ -288,13 +590,28 @@ void RenderingSystem::BuildLightingPass(ID3D12Device* device)
         ThrowIfFailed(hr);
     }
 
-    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
+    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
 
     CD3DX12_ROOT_PARAMETER slotRootParameter[2];
     slotRootParameter[0].InitAsConstantBufferView(0);
     slotRootParameter[1].InitAsDescriptorTable(1, &srvRange);
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0, nullptr,
+    CD3DX12_STATIC_SAMPLER_DESC shadowSampler(
+        0,
+        D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT,
+        D3D12_TEXTURE_ADDRESS_MODE_BORDER,
+        D3D12_TEXTURE_ADDRESS_MODE_BORDER,
+        D3D12_TEXTURE_ADDRESS_MODE_BORDER,
+        0.0f,
+        1,
+        D3D12_COMPARISON_FUNC_LESS_EQUAL,
+        D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
+        0.0f,
+        D3D12_FLOAT32_MAX,
+        D3D12_SHADER_VISIBILITY_PIXEL,
+        0);
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 1, &shadowSampler,
         D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
     ComPtr<ID3DBlob> serializedRootSig;

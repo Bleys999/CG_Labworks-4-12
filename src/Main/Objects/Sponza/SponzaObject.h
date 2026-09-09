@@ -23,6 +23,7 @@ public:
     virtual bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     virtual void Update(const GameTimer& gt) override;
     virtual void Draw(ID3D12GraphicsCommandList* cmdList) override;
+    virtual void DrawShadow(ID3D12GraphicsCommandList* cmdList) override;
     virtual void UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj) override;
     virtual bool UsesTessellation() const override { return true; }
     virtual void SetFrameCamera(const DirectX::XMFLOAT3& pos) override;

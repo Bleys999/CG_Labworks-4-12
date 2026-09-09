@@ -17,7 +17,7 @@ struct Config
     static constexpr float TextureScrollSpeedU = 0.04f;
     static constexpr float TextureScrollSpeedV = 0.03f;
 
-    static constexpr int ScatteredObjectCount = 1000;
+    static constexpr int ScatteredObjectCount = 200;
     static constexpr int OctreeMaxDepth = 6;
     static constexpr int OctreeMaxLeafObjects = 4;
 
@@ -26,4 +26,10 @@ struct Config
     static constexpr float TessNear = 5.0f;
     static constexpr float TessFar = 40.0f;
     static constexpr float DisplacementScale = 0.06f;
+
+    static constexpr int ShadowCascadeCount = 4;
+    static constexpr UINT ShadowMapSize = 2048;
+    static constexpr float ShadowDistance = 90.0f;
+    static constexpr float ShadowSplitLambda = 0.8f;
+    static constexpr float ShadowNearPad = 50.0f;
 };

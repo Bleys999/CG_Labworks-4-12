@@ -145,6 +145,7 @@ void SponzaObject::Draw(ID3D12GraphicsCommandList* cmdList)
         oc.TessMax = Config::TessMax;
         oc.TessNear = Config::TessNear;
         oc.TessFar = Config::TessFar;
+        oc.ReceiveShadow = 1.0f;
         mObjectCB->CopyData(0, oc);
 
         cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
@@ -155,6 +156,22 @@ void SponzaObject::Draw(ID3D12GraphicsCommandList* cmdList)
 
         cmdList->DrawIndexedInstanced(batch.IndexCount, 1, batch.StartIndexLocation, 0, 0);
     }
+}
+
+void SponzaObject::DrawShadow(ID3D12GraphicsCommandList* cmdList)
+{
+    if (!mGeometry || !mVisible || !mObjectCB) return;
+
+    ObjectConstants oc{};
+    oc.WorldViewProj = mWorldViewProj;
+    oc.World = mWorld;
+    mObjectCB->CopyData(0, oc);
+
+    cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
+    cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
+    cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmdList->DrawIndexedInstanced(mGeometry->DrawArgs["sponza"].IndexCount, 1, 0, 0, 0);
 }
 
 std::shared_ptr<Texture> SponzaObject::LoadDisplacement(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, const std::string& albedoPath)

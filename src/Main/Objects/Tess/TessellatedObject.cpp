@@ -161,6 +161,7 @@ void TessellatedObject::UpdateConstantBuffer(FXMMATRIX view, FXMMATRIX proj)
     oc.TessMax = Config::TessMax;
     oc.TessNear = Config::TessNear;
     oc.TessFar = Config::TessFar;
+    oc.ReceiveShadow = 1.0f;
     mObjectCB->CopyData(0, oc);
 }
 

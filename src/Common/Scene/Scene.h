@@ -20,6 +20,7 @@ public:
     void Update(const GameTimer& gt, const Camera& camera);
     void Draw(ID3D12GraphicsCommandList* cmdList, const Camera& camera);
     void DrawTessellated(ID3D12GraphicsCommandList* cmdList, const Camera& camera);
+    void DrawShadow(ID3D12GraphicsCommandList* cmdList);
 
     void AddObject(std::unique_ptr<GameObject> object);
     void RemoveObject(const std::string& name);

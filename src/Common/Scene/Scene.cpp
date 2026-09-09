@@ -163,6 +163,16 @@ void Scene::DrawTessellated(ID3D12GraphicsCommandList* cmdList, const Camera& ca
     }
 }
 
+void Scene::DrawShadow(ID3D12GraphicsCommandList* cmdList)
+{
+    for (auto& gameObject : mGameObjects)
+    {
+        if (!gameObject->IsVisible() || gameObject->UsesTessellation())
+            continue;
+        gameObject->DrawShadow(cmdList);
+    }
+}
+
 void Scene::ToggleFrustumCulling()
 {
     mFrustumCulling = !mFrustumCulling;

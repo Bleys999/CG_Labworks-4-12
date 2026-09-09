@@ -19,6 +19,7 @@ public:
     virtual bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager) override;
     virtual void Update(const GameTimer& gt) override;
     virtual void Draw(ID3D12GraphicsCommandList* cmdList) override;
+    virtual void DrawShadow(ID3D12GraphicsCommandList* cmdList) override;
     virtual void UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj) override;
 
     void SetDiffuseFactor(const DirectX::XMFLOAT4& color) { mDiffuseFactor = color; }
