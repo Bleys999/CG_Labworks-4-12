@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cfloat>
+#include <algorithm>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
@@ -325,6 +327,9 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
     std::vector<uint32_t> indices;
     mMaterialBatches.clear();
 
+    XMFLOAT3 boundMin(FLT_MAX, FLT_MAX, FLT_MAX);
+    XMFLOAT3 boundMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
     bool hasTexCoords = !attrib.texcoords.empty();
 
     int activeMat = -1;
@@ -409,6 +414,13 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
                 vertex.Tangent = XMFLOAT3(1.0f, 0.0f, 0.0f);
                 vertex.TexC = XMFLOAT2(tx, ty);
 
+                boundMin.x = (std::min)(boundMin.x, vx);
+                boundMin.y = (std::min)(boundMin.y, vy);
+                boundMin.z = (std::min)(boundMin.z, vz);
+                boundMax.x = (std::max)(boundMax.x, vx);
+                boundMax.y = (std::max)(boundMax.y, vy);
+                boundMax.z = (std::max)(boundMax.z, vz);
+
                 vertices.push_back(vertex);
                 indices.push_back(static_cast<uint32_t>(vertices.size() - 1));
             }
@@ -454,6 +466,10 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
     submesh.StartIndexLocation = 0;
     submesh.BaseVertexLocation = 0;
     mGeometry->DrawArgs["sponza"] = submesh;
+
+    BoundingBox local;
+    BoundingBox::CreateFromPoints(local, XMLoadFloat3(&boundMin), XMLoadFloat3(&boundMax));
+    SetLocalBounds(local);
 
     return true;
 }

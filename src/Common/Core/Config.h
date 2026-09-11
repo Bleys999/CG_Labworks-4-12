@@ -6,7 +6,7 @@ struct Config
     static constexpr float CameraSensitivity = 0.2f;
     static constexpr float CameraFOV = 0.25f * 3.14159f;
     static constexpr float CameraNearZ = 1.0f;
-    static constexpr float CameraFarZ = 1000.0f;
+    static constexpr float CameraFarZ = 8000.0f;
     static constexpr float ClearColorR = 0.48f;
     static constexpr float ClearColorG = 0.52f;
     static constexpr float ClearColorB = 0.80f;
@@ -17,7 +17,6 @@ struct Config
     static constexpr float TextureScrollSpeedU = 0.04f;
     static constexpr float TextureScrollSpeedV = 0.03f;
 
-    static constexpr int ScatteredObjectCount = 200;
     static constexpr int OctreeMaxDepth = 6;
     static constexpr int OctreeMaxLeafObjects = 4;
 
@@ -29,7 +28,7 @@ struct Config
 
     static constexpr int ShadowCascadeCount = 4;
     static constexpr UINT ShadowMapSize = 2048;
-    static constexpr float ShadowDistance = 90.0f;
-    static constexpr float ShadowSplitLambda = 0.8f;
-    static constexpr float ShadowNearPad = 50.0f;
+    static constexpr float ShadowDistance = 4000.0f;
+    static constexpr float ShadowCascadeEnds[4] = { 0.08f, 0.25f, 0.50f, 1.0f };
+    static constexpr float ShadowCasterDist = 1600.0f;
 };

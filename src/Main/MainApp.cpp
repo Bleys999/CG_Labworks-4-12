@@ -35,6 +35,10 @@ private:
     TextureManager mTextureManager;
     bool mPrevF3 = false;
     bool mPrevF4 = false;
+    bool mPrevF5 = false;
+    bool mPrevF6 = false;
+    bool mPrevF7 = false;
+    bool mPrevF8 = false;
 };
 
 MainApp::MainApp(HINSTANCE hInstance) : D3DApp(hInstance) {}
@@ -52,6 +56,8 @@ bool MainApp::Initialize()
     if (!mTextureManager.Initialize(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mRendering.Initialize(md3dDevice.Get())) return false;
     if (!mScene.Initialize(md3dDevice.Get(), mCommandList.Get(), &mTextureManager)) return false;
+    if (GameObject* sponza = mScene.GetObject("Sponza"))
+        mRendering.SetShadowCasterBounds(sponza->GetWorldBounds());
 
     ThrowIfFailed(mCommandList->Close());
     ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
@@ -77,6 +83,10 @@ void MainApp::Update(const GameTimer& gt)
 {
     const bool f3 = mInput.IsKeyDown(VK_F3);
     const bool f4 = mInput.IsKeyDown(VK_F4);
+    const bool f5 = mInput.IsKeyDown(VK_F5);
+    const bool f6 = mInput.IsKeyDown(VK_F6);
+    const bool f7 = mInput.IsKeyDown(VK_F7);
+    const bool f8 = mInput.IsKeyDown(VK_F8);
     if (f3 && !mPrevF3)
     {
         mScene.ToggleFrustumCulling();
@@ -87,8 +97,32 @@ void MainApp::Update(const GameTimer& gt)
         mScene.ToggleOctreeCulling();
         RefreshWindowCaption();
     }
+    if (f5 && !mPrevF5)
+    {
+        mRendering.SetShadowDebugMode(0);
+        RefreshWindowCaption();
+    }
+    if (f6 && !mPrevF6)
+    {
+        mRendering.SetShadowDebugMode(1);
+        RefreshWindowCaption();
+    }
+    if (f7 && !mPrevF7)
+    {
+        mRendering.SetShadowDebugMode(2);
+        RefreshWindowCaption();
+    }
+    if (f8 && !mPrevF8)
+    {
+        mRendering.SetShadowDebugMode(3);
+        RefreshWindowCaption();
+    }
     mPrevF3 = f3;
     mPrevF4 = f4;
+    mPrevF5 = f5;
+    mPrevF6 = f6;
+    mPrevF7 = f7;
+    mPrevF8 = f8;
 
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
@@ -170,11 +204,19 @@ void MainApp::RefreshWindowCaption()
 {
     std::wstring frustum = mScene.IsFrustumCullingEnabled() ? L"ON" : L"OFF";
     std::wstring octree = mScene.IsOctreeCullingEnabled() ? L"ON" : L"OFF";
-    mMainWndCaption = L"MainApp  F3 frustum:" + frustum +
+    const UINT viz = mRendering.GetShadowDebugMode();
+    std::wstring vizName = L"Normal";
+    if (viz == 1)
+        vizName = L"Checker Shadows";
+    else if (viz == 2)
+        vizName = L"No Shadows";
+    else if (viz == 3)
+        vizName = L"Cascade Colors";
+    mMainWndCaption = L"Shadow Debug Mode: " + vizName +
+        L"  F3 frustum:" + frustum +
         L"  F4 octree:" + octree +
-        L"  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +
-        L"/" + std::to_wstring(mScene.GetObjectCount()) +
-        L"  boxes:" + std::to_wstring(mScene.GetCullableCount());
+        L"  F5/F6/F7/F8  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +
+        L"/" + std::to_wstring(mScene.GetObjectCount());
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, PSTR cmdLine, int showCmd)

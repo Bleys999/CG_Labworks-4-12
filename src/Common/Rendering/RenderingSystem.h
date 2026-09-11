@@ -18,7 +18,8 @@ struct DeferredLightingConstants
     DirectX::XMFLOAT4 CameraLook = { 0.0f, 0.0f, 1.0f, 0.0f };
     UINT PointCount = 0;
     UINT SpotCount = 0;
-    UINT Pad[2] = {};
+    UINT DebugMode = 0;
+    UINT Pad = 0;
     DirectX::XMFLOAT4 PointPosRange[kMaxPointLights] = {};
     DirectX::XMFLOAT4 PointColorIntensity[kMaxPointLights] = {};
     DirectX::XMFLOAT4 SpotPosRange[kMaxSpotLights] = {};
@@ -54,6 +55,10 @@ public:
     void EndShadowPass(ID3D12GraphicsCommandList* cmdList);
     DirectX::XMMATRIX GetCascadeView(UINT cascadeIndex) const;
     DirectX::XMMATRIX GetCascadeProj(UINT cascadeIndex) const;
+
+    void SetShadowDebugMode(UINT mode);
+    UINT GetShadowDebugMode() const { return mLightingCpu.DebugMode; }
+    void SetShadowCasterBounds(const DirectX::BoundingBox& bounds);
 
     void UpdateLightingConstants(const Camera& camera);
     void DrawDeferredLighting(
@@ -112,4 +117,6 @@ private:
     std::unique_ptr<UploadBuffer<DeferredLightingConstants>> mLightingCB;
 
     DeferredLightingConstants mLightingCpu = {};
+    DirectX::BoundingBox mShadowCasterBounds = {};
+    bool mHasShadowCasterBounds = false;
 };

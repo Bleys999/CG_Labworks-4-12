@@ -36,7 +36,6 @@ public:
     bool IsOctreeCullingEnabled() const { return mOctreeCulling; }
 
 private:
-    bool SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     void BuildOctree();
     bool ShouldDrawObject(GameObject* object, const DirectX::BoundingFrustum& frustum) const;
 

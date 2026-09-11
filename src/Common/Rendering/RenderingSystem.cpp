@@ -41,20 +41,12 @@ void RenderingSystem::Resize(ID3D12Device* device, UINT width, UINT height)
 
 void RenderingSystem::InitDefaultLights()
 {
-    mLightingCpu.DirectionalDir = { -0.48f, -0.72f, 0.50f, 0.0f };
-    mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 2.1f };
-    mLightingCpu.AmbientColor = { 0.10f, 0.10f, 0.11f, 1.0f };
+    XMVECTOR sun = XMVector3Normalize(XMVectorSet(0.42f, -0.86f, 0.22f, 0.0f));
+    XMStoreFloat4(&mLightingCpu.DirectionalDir, sun);
+    mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 2.35f };
+    mLightingCpu.AmbientColor = { 0.13f, 0.13f, 0.145f, 1.0f };
 
-    mLightingCpu.PointCount = 4;
-    mLightingCpu.PointPosRange[0] = { -6.0f, 7.0f, 0.0f, 16.0f };
-    mLightingCpu.PointColorIntensity[0] = { 1.0f, 0.25f, 0.18f, 0.55f };
-    mLightingCpu.PointPosRange[1] = { 6.0f, 7.0f, 0.0f, 16.0f };
-    mLightingCpu.PointColorIntensity[1] = { 0.18f, 0.40f, 1.0f, 0.55f };
-    mLightingCpu.PointPosRange[2] = { 0.0f, 7.0f, 6.0f, 16.0f };
-    mLightingCpu.PointColorIntensity[2] = { 0.18f, 1.0f, 0.28f, 0.45f };
-    mLightingCpu.PointPosRange[3] = { 0.0f, 7.0f, -6.0f, 16.0f };
-    mLightingCpu.PointColorIntensity[3] = { 1.0f, 0.85f, 0.20f, 0.45f };
-
+    mLightingCpu.PointCount = 0;
     mLightingCpu.SpotCount = 0;
 }
 
@@ -63,9 +55,30 @@ void RenderingSystem::UpdateLightingConstants(const Camera& camera)
     XMVECTOR eye = camera.GetPosition();
     XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraWorld), eye);
     XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraLook), camera.GetLook());
+    mLightingCpu.CameraWorld.w = camera.GetAspect();
+    mLightingCpu.CameraLook.w = tanf(0.5f * camera.GetFovY());
     UpdateShadowCascades(camera);
-    mLightingCpu.ShadowParams = XMFLOAT4(1.0f / (float)Config::ShadowMapSize, 0.0025f, (float)Config::ShadowCascadeCount, 0.04f);
+
+    float nBias = 0.8f;
+    if (mHasShadowCasterBounds)
+    {
+        const XMFLOAT3 e = mShadowCasterBounds.Extents;
+        const float r = (std::max)(e.x, (std::max)(e.y, e.z));
+        nBias = (std::max)(0.8f, r * 0.0008f);
+    }
+    mLightingCpu.ShadowParams = XMFLOAT4(1.0f / (float)Config::ShadowMapSize, 0.0015f, (float)Config::ShadowCascadeCount, nBias);
     mLightingCB->CopyData(0, mLightingCpu);
+}
+
+void RenderingSystem::SetShadowDebugMode(UINT mode)
+{
+    mLightingCpu.DebugMode = mode;
+}
+
+void RenderingSystem::SetShadowCasterBounds(const BoundingBox& bounds)
+{
+    mShadowCasterBounds = bounds;
+    mHasShadowCasterBounds = true;
 }
 
 void RenderingSystem::ApplyGeometryPass(ID3D12GraphicsCommandList* cmdList) const
@@ -427,24 +440,26 @@ void RenderingSystem::UpdateShadowCascades(const Camera& camera)
 {
     const int nCascades = Config::ShadowCascadeCount;
     const float nearZ = camera.GetNearZ();
-    const float farZ = Config::ShadowDistance;
-    const float lambda = Config::ShadowSplitLambda;
+
+    float casterRadius = Config::ShadowCasterDist;
+    if (mHasShadowCasterBounds)
+    {
+        const XMFLOAT3 e = mShadowCasterBounds.Extents;
+        casterRadius = (std::max)(e.x, (std::max)(e.y, e.z));
+    }
+
+    const float farZ = (std::max)(Config::ShadowDistance, casterRadius * 2.2f);
 
     float splits[5];
     splits[0] = nearZ;
-    for (int i = 1; i <= nCascades; ++i)
-    {
-        float p = (float)i / (float)nCascades;
-        float logSplit = nearZ * powf(farZ / nearZ, p);
-        float uniSplit = nearZ + (farZ - nearZ) * p;
-        splits[i] = logSplit * lambda + uniSplit * (1.0f - lambda);
-    }
+    for (int i = 0; i < nCascades; ++i)
+        splits[i + 1] = (std::max)(nearZ + 0.01f, farZ * Config::ShadowCascadeEnds[i]);
     mLightingCpu.CascadeSplits = XMFLOAT4(splits[1], splits[2], splits[3], splits[4]);
 
     XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.DirectionalDir)));
-    XMVECTOR worldUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-    if (fabsf(XMVectorGetX(XMVector3Dot(lightDir, worldUp))) > 0.99f)
-        worldUp = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+    XMVECTOR worldUp = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+    if (fabsf(XMVectorGetZ(XMVector3Dot(lightDir, worldUp))) > 0.9f)
+        worldUp = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
 
     XMVECTOR camPos = camera.GetPosition();
     XMVECTOR camRight = camera.GetRight();
@@ -454,7 +469,14 @@ void RenderingSystem::UpdateShadowCascades(const Camera& camera)
     float aspect = camera.GetAspect();
     float tanHalf = tanf(0.5f * fovY);
 
+    XMVECTOR focus = camPos + camLook * (farZ * 0.3f);
+    float lightPull = casterRadius * 2.5f + 200.0f;
+    if (mHasShadowCasterBounds)
+        focus = XMLoadFloat3(&mShadowCasterBounds.Center);
+    XMMATRIX lightView = XMMatrixLookAtLH(focus - lightDir * lightPull, focus, worldUp);
+
     const float mapSize = (float)Config::ShadowMapSize;
+    const float casterDist = casterRadius * 2.0f + 100.0f;
 
     for (int i = 0; i < nCascades; ++i)
     {
@@ -475,36 +497,70 @@ void RenderingSystem::UpdateShadowCascades(const Camera& camera)
         corners[6] = camPos + camLook * zf - camUp * fy - camRight * fx;
         corners[7] = camPos + camLook * zf - camUp * fy + camRight * fx;
 
-        XMVECTOR center = XMVectorZero();
-        for (int c = 0; c < 8; ++c)
-            center += corners[c];
-        center *= 0.125f;
+        float minX = 1.0e8f, maxX = -1.0e8f;
+        float minY = 1.0e8f, maxY = -1.0e8f;
+        float minZ = 1.0e8f, maxZ = -1.0e8f;
 
-        float radius = 0.0f;
         for (int c = 0; c < 8; ++c)
         {
-            float d = XMVectorGetX(XMVector3Length(corners[c] - center));
-            radius = (std::max)(radius, d);
+            XMVECTOR pts[2] = { corners[c], corners[c] - lightDir * casterDist };
+            for (int p = 0; p < 2; ++p)
+            {
+                XMFLOAT3 ls;
+                XMStoreFloat3(&ls, XMVector3TransformCoord(pts[p], lightView));
+                minX = (std::min)(minX, ls.x);
+                maxX = (std::max)(maxX, ls.x);
+                minY = (std::min)(minY, ls.y);
+                maxY = (std::max)(maxY, ls.y);
+                minZ = (std::min)(minZ, ls.z);
+                maxZ = (std::max)(maxZ, ls.z);
+            }
         }
-        radius = ceilf(radius * 16.0f) / 16.0f;
 
-        XMVECTOR eye = center - lightDir * (radius + Config::ShadowNearPad);
-        XMMATRIX view = XMMatrixLookAtLH(eye, center, worldUp);
+        float pad = 8.0f + 8.0f * (maxX - minX) / mapSize;
+        minX -= pad;
+        maxX += pad;
+        minY -= pad;
+        maxY += pad;
 
-        float l = -radius;
-        float r = radius;
-        float b = -radius;
-        float t = radius;
-        float texel = (radius * 2.0f) / mapSize;
-        l = floorf(l / texel) * texel;
-        r = floorf(r / texel) * texel;
-        b = floorf(b / texel) * texel;
-        t = floorf(t / texel) * texel;
+        if (mHasShadowCasterBounds)
+        {
+            const XMFLOAT3 c = mShadowCasterBounds.Center;
+            const XMFLOAT3 e = mShadowCasterBounds.Extents;
+            for (int ix = 0; ix < 2; ++ix)
+            {
+                for (int iy = 0; iy < 2; ++iy)
+                {
+                    for (int iz = 0; iz < 2; ++iz)
+                    {
+                        XMVECTOR p = XMVectorSet(
+                            c.x + (ix ? e.x : -e.x),
+                            c.y + (iy ? e.y : -e.y),
+                            c.z + (iz ? e.z : -e.z),
+                            1.0f);
+                        XMFLOAT3 ls;
+                        XMStoreFloat3(&ls, XMVector3TransformCoord(p, lightView));
+                        minZ = (std::min)(minZ, ls.z);
+                        maxZ = (std::max)(maxZ, ls.z);
+                    }
+                }
+            }
+        }
 
-        XMMATRIX proj = XMMatrixOrthographicOffCenterLH(l, r, b, t, 0.0f, radius * 2.0f + Config::ShadowNearPad);
-        XMMATRIX vp = view * proj;
+        minZ = (std::max)(minZ - casterRadius * 0.02f, 0.05f);
+        maxZ += casterRadius * 0.05f + 16.0f;
 
-        XMStoreFloat4x4(&mCascadeView[i], view);
+        float texelX = (maxX - minX) / mapSize;
+        float texelY = (maxY - minY) / mapSize;
+        minX = floorf(minX / texelX) * texelX;
+        maxX = ceilf(maxX / texelX) * texelX;
+        minY = floorf(minY / texelY) * texelY;
+        maxY = ceilf(maxY / texelY) * texelY;
+
+        XMMATRIX proj = XMMatrixOrthographicOffCenterLH(minX, maxX, minY, maxY, minZ, maxZ);
+        XMMATRIX vp = lightView * proj;
+
+        XMStoreFloat4x4(&mCascadeView[i], lightView);
         XMStoreFloat4x4(&mCascadeProj[i], proj);
         XMStoreFloat4x4(&mLightingCpu.CascadeViewProj[i], XMMatrixTranspose(vp));
 
@@ -553,7 +609,7 @@ void RenderingSystem::BuildShadowPass(ID3D12Device* device)
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     psoDesc.RasterizerState.DepthBias = 0;
-    psoDesc.RasterizerState.SlopeScaledDepthBias = 2.0f;
+    psoDesc.RasterizerState.SlopeScaledDepthBias = 1.6f;
     psoDesc.RasterizerState.DepthBiasClamp = 0.0f;
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -611,7 +667,24 @@ void RenderingSystem::BuildLightingPass(ID3D12Device* device)
         D3D12_SHADER_VISIBILITY_PIXEL,
         0);
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 1, &shadowSampler,
+    CD3DX12_STATIC_SAMPLER_DESC mapSampler(
+        1,
+        D3D12_FILTER_MIN_MAG_MIP_POINT,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        0.0f,
+        1,
+        D3D12_COMPARISON_FUNC_NEVER,
+        D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
+        0.0f,
+        D3D12_FLOAT32_MAX,
+        D3D12_SHADER_VISIBILITY_PIXEL,
+        0);
+
+    CD3DX12_STATIC_SAMPLER_DESC samplers[2] = { shadowSampler, mapSampler };
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 2, samplers,
         D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
     ComPtr<ID3DBlob> serializedRootSig;

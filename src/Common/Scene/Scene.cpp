@@ -1,10 +1,7 @@
 #include "Scene.h"
-#include "../../Main/Objects/Box/BoxObject.h"
 #include "../../Main/Objects/Sponza/SponzaObject.h"
 #include "../Assets/TextureManager.h"
-#include "../Core/Config.h"
 #include <algorithm>
-#include <random>
 #include <string>
 
 using namespace DirectX;
@@ -27,42 +24,7 @@ bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
         return false;
     AddObject(std::move(sponza));
 
-    if (!SpawnScatteredBoxes(device, cmdList, textureManager))
-        return false;
-
     BuildOctree();
-    return true;
-}
-
-bool Scene::SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)
-{
-    std::mt19937 rng(4);
-    std::uniform_real_distribution<float> distX(-22.0f, 22.0f);
-    std::uniform_real_distribution<float> distY(0.8f, 10.0f);
-    std::uniform_real_distribution<float> distZ(-18.0f, 18.0f);
-    std::uniform_real_distribution<float> distScale(0.18f, 0.45f);
-    std::uniform_real_distribution<float> distColor(0.15f, 1.0f);
-    std::uniform_real_distribution<float> distYaw(0.0f, 6.2831853f);
-
-    mCullableCount = 0;
-
-    for (int i = 0; i < Config::ScatteredObjectCount; ++i)
-    {
-        auto box = std::make_unique<BoxObject>("Box" + std::to_string(i));
-        box->SetPosition(distX(rng), distY(rng), distZ(rng));
-        box->SetRotation(0.0f, distYaw(rng), 0.0f);
-        const float s = distScale(rng);
-        box->SetScale(s, s, s);
-        box->SetDiffuseFactor(XMFLOAT4(distColor(rng), distColor(rng), distColor(rng), 1.0f));
-        box->SetCullable(true);
-
-        if (!box->Initialize(device, cmdList, textureManager))
-            return false;
-
-        AddObject(std::move(box));
-        ++mCullableCount;
-    }
-
     return true;
 }
 
@@ -167,7 +129,7 @@ void Scene::DrawShadow(ID3D12GraphicsCommandList* cmdList)
 {
     for (auto& gameObject : mGameObjects)
     {
-        if (!gameObject->IsVisible() || gameObject->UsesTessellation())
+        if (!gameObject->IsVisible())
             continue;
         gameObject->DrawShadow(cmdList);
     }

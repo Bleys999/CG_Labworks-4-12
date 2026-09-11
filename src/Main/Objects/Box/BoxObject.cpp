@@ -83,7 +83,7 @@ void BoxObject::UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX
     objConstants.DiffuseFactor = mDiffuseFactor;
     objConstants.UVScale = XMFLOAT2(1.0f, 1.0f);
     objConstants.UVOffset = XMFLOAT2(0.0f, 0.0f);
-    objConstants.ReceiveShadow = 0.0f;
+    objConstants.ReceiveShadow = 1.0f;
 
     mObjectCB->CopyData(0, objConstants);
 }
