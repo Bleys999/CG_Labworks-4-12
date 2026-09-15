@@ -46,7 +46,9 @@ void RenderingSystem::InitDefaultLights()
     mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 2.35f };
     mLightingCpu.AmbientColor = { 0.13f, 0.13f, 0.145f, 1.0f };
 
-    mLightingCpu.PointCount = 0;
+    mLightingCpu.PointCount = 1;
+    mLightingCpu.PointPosRange[0] = { 0.0f, 0.2f, 0.0f, 22.0f };
+    mLightingCpu.PointColorIntensity[0] = { 1.0f, 0.55f, 0.22f, 8.0f };
     mLightingCpu.SpotCount = 0;
 }
 

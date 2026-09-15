@@ -73,6 +73,9 @@
     <ClCompile Include="..\Common\Rendering\RenderingSystem.cpp">
       <Filter>Common\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="..\Common\Rendering\ParticleSystem.cpp">
+      <Filter>Common\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="..\Common\Scene\Camera.cpp">
       <Filter>Common\Scene</Filter>
     </ClCompile>
@@ -135,6 +138,9 @@
     <ClInclude Include="..\Common\Rendering\RenderingSystem.h">
       <Filter>Common\Rendering</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\Rendering\ParticleSystem.h">
+      <Filter>Common\Rendering</Filter>
+    </ClInclude>
     <ClInclude Include="..\Common\Scene\Camera.h">
       <Filter>Common\Scene</Filter>
     </ClInclude>
@@ -180,6 +186,18 @@
       <Filter>Shader Files</Filter>
     </None>
     <None Include="Debug\Shaders\deferred_light.hlsl">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\particle.hlsli">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\particles_cs.hlsl">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\particles_sort.hlsl">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\particles.hlsl">
       <Filter>Shader Files</Filter>
     </None>
   </ItemGroup>

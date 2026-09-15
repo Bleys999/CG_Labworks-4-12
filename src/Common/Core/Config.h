@@ -17,6 +17,7 @@ struct Config
     static constexpr float TextureScrollSpeedU = 0.04f;
     static constexpr float TextureScrollSpeedV = 0.03f;
 
+    static constexpr int ScatteredObjectCount = 200;
     static constexpr int OctreeMaxDepth = 6;
     static constexpr int OctreeMaxLeafObjects = 4;
 
@@ -31,4 +32,14 @@ struct Config
     static constexpr float ShadowDistance = 4000.0f;
     static constexpr float ShadowCascadeEnds[4] = { 0.08f, 0.25f, 0.50f, 1.0f };
     static constexpr float ShadowCasterDist = 1600.0f;
+
+    static constexpr UINT ParticleMaxCount = 16384;
+    static constexpr UINT ParticleEmitPerFrame = 96;
+    static constexpr float ParticleLifetime = 3.2f;
+    static constexpr float ParticleSizeMin = 0.12f;
+    static constexpr float ParticleSizeMax = 0.26f;
+    static constexpr float ParticleEmitSpeed = 20.0f;
+    static constexpr float ParticleEmitSpread = 10.0f;
+    static constexpr float ParticleGravity = -12.0f;
+    static constexpr bool ParticleGpuSort = true;
 };

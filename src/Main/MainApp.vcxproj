@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -157,6 +157,7 @@
     <ClCompile Include="..\Common\D3D12\Renderer.cpp" />
     <ClCompile Include="..\Common\Rendering\GBuffer.cpp" />
     <ClCompile Include="..\Common\Rendering\RenderingSystem.cpp" />
+    <ClCompile Include="..\Common\Rendering\ParticleSystem.cpp" />
     <ClCompile Include="..\Common\Scene\Scene.cpp" />
     <ClCompile Include="..\Common\Scene\Octree.cpp" />
     <ClCompile Include="..\Common\Assets\GeometryGenerator.cpp" />
@@ -180,6 +181,7 @@
     <ClInclude Include="..\Common\D3D12\Renderer.h" />
     <ClInclude Include="..\Common\Rendering\GBuffer.h" />
     <ClInclude Include="..\Common\Rendering\RenderingSystem.h" />
+    <ClInclude Include="..\Common\Rendering\ParticleSystem.h" />
     <ClInclude Include="..\Common\Scene\Scene.h" />
     <ClInclude Include="..\Common\Scene\Octree.h" />
     <ClInclude Include="..\Common\Assets\GeometryGenerator.h" />
@@ -188,6 +190,12 @@
     <ClInclude Include="Objects\Sponza\SponzaObject.h" />
     <ClInclude Include="Objects\Box\BoxObject.h" />
     <ClInclude Include="Objects\Tess\TessellatedObject.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\particle.hlsli" />
+    <None Include="Shaders\particles_cs.hlsl" />
+    <None Include="Shaders\particles_sort.hlsl" />
+    <None Include="Shaders\particles.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
