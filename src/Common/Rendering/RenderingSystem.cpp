@@ -16,6 +16,28 @@ namespace
 #endif
         return f;
     }
+
+    Microsoft::WRL::ComPtr<ID3DBlob> CompileShaderFile(const wchar_t* name, const char* entry, const char* target)
+    {
+        std::wstring a = std::wstring(L"..\\Shaders\\") + name;
+        std::wstring b = std::wstring(L"Shaders\\") + name;
+        ComPtr<ID3DBlob> blob;
+        ComPtr<ID3DBlob> errors;
+        HRESULT hr = D3DCompileFromFile(a.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
+            entry, target, CompileFlags(), 0, &blob, &errors);
+        if (FAILED(hr))
+        {
+            if (errors)
+                OutputDebugStringA((char*)errors->GetBufferPointer());
+            errors.Reset();
+            hr = D3DCompileFromFile(b.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
+                entry, target, CompileFlags(), 0, &blob, &errors);
+            if (FAILED(hr) && errors)
+                OutputDebugStringA((char*)errors->GetBufferPointer());
+            ThrowIfFailed(hr);
+        }
+        return blob;
+    }
 }
 
 bool RenderingSystem::Initialize(ID3D12Device* device)
@@ -23,20 +45,25 @@ bool RenderingSystem::Initialize(ID3D12Device* device)
     mDevice = device;
     mLightingCB = std::make_unique<UploadBuffer<DeferredLightingConstants>>(device, 1, true);
     mShadowPassCB = std::make_unique<UploadBuffer<ShadowPassConstants>>(device, Config::ShadowCascadeCount, true);
+    mPostCB = std::make_unique<UploadBuffer<PostProcessConstants>>(device, 1, true);
     InitDefaultLights();
     CreateShadowMaps(device);
     BuildGeometryPass(device);
     BuildTessellationPass(device);
     BuildShadowPass(device);
     BuildLightingPass(device);
+    BuildPostPass(device);
     UpdateLightingSrvs(device);
+    UpdatePostSrvs(device);
     return true;
 }
 
 void RenderingSystem::Resize(ID3D12Device* device, UINT width, UINT height)
 {
     mGBuffer.Resize(device, width, height);
+    CreateSceneTarget(device, width, height);
     UpdateLightingSrvs(device);
+    UpdatePostSrvs(device);
 }
 
 void RenderingSystem::InitDefaultLights()
@@ -148,10 +175,19 @@ XMMATRIX RenderingSystem::GetCascadeProj(UINT cascadeIndex) const
 
 void RenderingSystem::DrawDeferredLighting(
     ID3D12GraphicsCommandList* cmdList,
-    D3D12_CPU_DESCRIPTOR_HANDLE backBufferRtv,
     const D3D12_VIEWPORT& viewport,
-    const D3D12_RECT& scissor) const
+    const D3D12_RECT& scissor)
 {
+    if (!mSceneColor)
+        return;
+
+    if (mSceneState != D3D12_RESOURCE_STATE_RENDER_TARGET)
+    {
+        cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+            mSceneColor.Get(), mSceneState, D3D12_RESOURCE_STATE_RENDER_TARGET));
+        mSceneState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    }
+
     cmdList->SetGraphicsRootSignature(mLightingRootSignature.Get());
     cmdList->SetPipelineState(mLightingPSO.Get());
 
@@ -165,11 +201,63 @@ void RenderingSystem::DrawDeferredLighting(
     cmdList->RSSetScissorRects(1, &scissor);
 
     float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    cmdList->OMSetRenderTargets(1, &mSceneRtv, false, nullptr);
+    cmdList->ClearRenderTargetView(mSceneRtv, black, 0, nullptr);
+
+    DrawFullscreenQuad(cmdList);
+
+    cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+        mSceneColor.Get(), mSceneState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+    mSceneState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+}
+
+void RenderingSystem::DrawFullscreenQuad(ID3D12GraphicsCommandList* cmdList) const
+{
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    cmdList->DrawInstanced(4, 1, 0, 0);
+}
+
+void RenderingSystem::DrawPostProcess(
+    ID3D12GraphicsCommandList* cmdList,
+    D3D12_CPU_DESCRIPTOR_HANDLE backBufferRtv,
+    const D3D12_VIEWPORT& viewport,
+    const D3D12_RECT& scissor)
+{
+    if (!mSceneColor || !mPostPSO)
+        return;
+
+    PostProcessConstants pc{};
+    pc.CameraWorld = XMFLOAT3(mLightingCpu.CameraWorld.x, mLightingCpu.CameraWorld.y, mLightingCpu.CameraWorld.z);
+    pc.FogStart = Config::FogStart;
+    pc.FogColor = XMFLOAT3(0.62f, 0.70f, 0.82f);
+    pc.FogEnd = Config::FogEnd;
+    pc.BloomThreshold = Config::BloomThreshold;
+    pc.BloomIntensity = Config::BloomIntensity;
+    pc.InvScreenSize = XMFLOAT2(
+        mSceneWidth > 0 ? 1.0f / (float)mSceneWidth : 0.0f,
+        mSceneHeight > 0 ? 1.0f / (float)mSceneHeight : 0.0f);
+    pc.FogStrength = mFogEnabled ? Config::FogStrength : 0.0f;
+    pc.PostEnable = 1.0f;
+    pc.EdgeStrength = mEdgeEnabled ? Config::EdgeStrength : 0.0f;
+    mPostCB->CopyData(0, pc);
+
+    cmdList->SetGraphicsRootSignature(mPostRootSignature.Get());
+    cmdList->SetPipelineState(mPostPSO.Get());
+
+    ID3D12DescriptorHeap* heaps[] = { mPostSrvHeap.Get() };
+    cmdList->SetDescriptorHeaps(1, heaps);
+
+    cmdList->SetGraphicsRootConstantBufferView(0, mPostCB->Resource()->GetGPUVirtualAddress());
+    cmdList->SetGraphicsRootDescriptorTable(1, mPostSrvHeap->GetGPUDescriptorHandleForHeapStart());
+
+    cmdList->RSSetViewports(1, &viewport);
+    cmdList->RSSetScissorRects(1, &scissor);
+
+    float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
     cmdList->OMSetRenderTargets(1, &backBufferRtv, false, nullptr);
     cmdList->ClearRenderTargetView(backBufferRtv, black, 0, nullptr);
 
-    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmdList->DrawInstanced(3, 1, 0, 0);
+    DrawFullscreenQuad(cmdList);
 }
 
 void RenderingSystem::BuildGeometryPass(ID3D12Device* device)
@@ -628,25 +716,8 @@ void RenderingSystem::BuildShadowPass(ID3D12Device* device)
 
 void RenderingSystem::BuildLightingPass(ID3D12Device* device)
 {
-    ComPtr<ID3DBlob> errors;
-
-    HRESULT hr = D3DCompileFromFile(L"Shaders\\deferred_light.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "VS", "vs_5_0", CompileFlags(), 0, &mLightingVs, &errors);
-    if (FAILED(hr))
-    {
-        if (errors)
-            OutputDebugStringA((char*)errors->GetBufferPointer());
-        ThrowIfFailed(hr);
-    }
-
-    hr = D3DCompileFromFile(L"Shaders\\deferred_light.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "PS", "ps_5_0", CompileFlags(), 0, &mLightingPs, &errors);
-    if (FAILED(hr))
-    {
-        if (errors)
-            OutputDebugStringA((char*)errors->GetBufferPointer());
-        ThrowIfFailed(hr);
-    }
+    mLightingVs = CompileShaderFile(L"deferred_light.hlsl", "VSFullscreen", "vs_5_0");
+    mLightingPs = CompileShaderFile(L"deferred_light.hlsl", "PS", "ps_5_0");
 
     CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
 
@@ -708,10 +779,159 @@ void RenderingSystem::BuildLightingPass(ID3D12Device* device)
     psoDesc.SampleMask = UINT_MAX;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.RTVFormats[0] = SceneFormat;
     psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
 
     ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mLightingPSO)));
+}
+
+void RenderingSystem::CreateSceneTarget(ID3D12Device* device, UINT width, UINT height)
+{
+    if (width == 0 || height == 0)
+        return;
+
+    mSceneColor.Reset();
+    mSceneRtvHeap.Reset();
+    mSceneWidth = width;
+    mSceneHeight = height;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = SceneFormat;
+    desc.SampleDesc.Count = 1;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE clear = {};
+    clear.Format = SceneFormat;
+    clear.Color[3] = 1.0f;
+
+    ThrowIfFailed(device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clear,
+        IID_PPV_ARGS(&mSceneColor)));
+    mSceneState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+    rtvHeapDesc.NumDescriptors = 1;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    ThrowIfFailed(device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&mSceneRtvHeap)));
+    mSceneRtv = mSceneRtvHeap->GetCPUDescriptorHandleForHeapStart();
+    device->CreateRenderTargetView(mSceneColor.Get(), nullptr, mSceneRtv);
+}
+
+void RenderingSystem::UpdatePostSrvs(ID3D12Device* device)
+{
+    if (!mGBuffer.AlbedoResource() || !mSceneColor)
+        return;
+
+    if (!mPostSrvHeap)
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+        heapDesc.NumDescriptors = 4;
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mPostSrvHeap)));
+    }
+
+    UINT inc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE cpu(mPostSrvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+    srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Texture2D.MipLevels = 1;
+
+    srv.Format = SceneFormat;
+    device->CreateShaderResourceView(mSceneColor.Get(), &srv, cpu);
+    cpu.Offset(1, inc);
+
+    srv.Format = GBuffer::AlbedoFormat;
+    device->CreateShaderResourceView(mGBuffer.AlbedoResource(), &srv, cpu);
+    cpu.Offset(1, inc);
+
+    srv.Format = GBuffer::NormalFormat;
+    device->CreateShaderResourceView(mGBuffer.NormalResource(), &srv, cpu);
+    cpu.Offset(1, inc);
+
+    srv.Format = GBuffer::WorldPosFormat;
+    device->CreateShaderResourceView(mGBuffer.WorldPosResource(), &srv, cpu);
+}
+
+void RenderingSystem::BuildPostPass(ID3D12Device* device)
+{
+    mPostVs = CompileShaderFile(L"postprocess.hlsl", "VSFullscreen", "vs_5_0");
+    mPostPs = CompileShaderFile(L"postprocess.hlsl", "PS", "ps_5_0");
+
+    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
+    CD3DX12_ROOT_PARAMETER slot[2];
+    slot[0].InitAsConstantBufferView(0);
+    slot[1].InitAsDescriptorTable(1, &srvRange);
+
+    CD3DX12_STATIC_SAMPLER_DESC linearClamp(
+        0,
+        D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        0.0f,
+        1,
+        D3D12_COMPARISON_FUNC_ALWAYS,
+        D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
+        0.0f,
+        D3D12_FLOAT32_MAX,
+        D3D12_SHADER_VISIBILITY_PIXEL,
+        0);
+
+    CD3DX12_STATIC_SAMPLER_DESC pointClamp(
+        1,
+        D3D12_FILTER_MIN_MAG_MIP_POINT,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        0.0f,
+        1,
+        D3D12_COMPARISON_FUNC_NEVER,
+        D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
+        0.0f,
+        D3D12_FLOAT32_MAX,
+        D3D12_SHADER_VISIBILITY_PIXEL,
+        0);
+
+    CD3DX12_STATIC_SAMPLER_DESC samplers[2] = { linearClamp, pointClamp };
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slot, 2, samplers, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+    ComPtr<ID3DBlob> serializedRootSig;
+    ComPtr<ID3DBlob> errorBlob;
+    ThrowIfFailed(D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+        serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf()));
+    ThrowIfFailed(device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(),
+        serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&mPostRootSignature)));
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout = { nullptr, 0 };
+    psoDesc.pRootSignature = mPostRootSignature.Get();
+    psoDesc.VS = { reinterpret_cast<BYTE*>(mPostVs->GetBufferPointer()), mPostVs->GetBufferSize() };
+    psoDesc.PS = { reinterpret_cast<BYTE*>(mPostPs->GetBufferPointer()), mPostPs->GetBufferSize() };
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.DepthStencilState.DepthEnable = false;
+    psoDesc.DepthStencilState.StencilEnable = false;
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    psoDesc.SampleDesc.Count = 1;
+    psoDesc.SampleDesc.Quality = 0;
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPostPSO)));
 }

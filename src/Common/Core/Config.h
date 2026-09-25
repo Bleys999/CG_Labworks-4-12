@@ -42,4 +42,11 @@ struct Config
     static constexpr float ParticleEmitSpread = 10.0f;
     static constexpr float ParticleGravity = -12.0f;
     static constexpr bool ParticleGpuSort = true;
+
+    static constexpr float FogStart = 120.0f;
+    static constexpr float FogEnd = 2200.0f;
+    static constexpr float FogStrength = 0.82f;
+    static constexpr float BloomThreshold = 0.55f;
+    static constexpr float BloomIntensity = 0.65f;
+    static constexpr float EdgeStrength = 0.9f;
 };

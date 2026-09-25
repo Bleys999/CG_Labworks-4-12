@@ -30,6 +30,23 @@ struct DeferredLightingConstants
     DirectX::XMFLOAT4 ShadowParams = {};
 };
 
+struct PostProcessConstants
+{
+    DirectX::XMFLOAT3 CameraWorld = { 0.0f, 0.0f, 0.0f };
+    float FogStart = 120.0f;
+    DirectX::XMFLOAT3 FogColor = { 0.62f, 0.70f, 0.82f };
+    float FogEnd = 2200.0f;
+    float BloomThreshold = 0.55f;
+    float BloomIntensity = 0.65f;
+    DirectX::XMFLOAT2 InvScreenSize = { 0.0f, 0.0f };
+    float FogStrength = 0.82f;
+    float PostEnable = 1.0f;
+    float EdgeStrength = 0.9f;
+    float Pad0 = 0.0f;
+    float Pad[48] = {};
+};
+static_assert(sizeof(PostProcessConstants) == 256, "PostProcessConstants must be 256 bytes");
+
 struct ShadowPassConstants
 {
     DirectX::XMFLOAT4X4 LightViewProj = MathHelper::Identity4x4();
@@ -63,19 +80,32 @@ public:
     void UpdateLightingConstants(const Camera& camera);
     void DrawDeferredLighting(
         ID3D12GraphicsCommandList* cmdList,
+        const D3D12_VIEWPORT& viewport,
+        const D3D12_RECT& scissor);
+    void DrawPostProcess(
+        ID3D12GraphicsCommandList* cmdList,
         D3D12_CPU_DESCRIPTOR_HANDLE backBufferRtv,
         const D3D12_VIEWPORT& viewport,
-        const D3D12_RECT& scissor) const;
+        const D3D12_RECT& scissor);
+
+    void ToggleFogEnabled() { mFogEnabled = !mFogEnabled; }
+    bool IsFogEnabled() const { return mFogEnabled; }
+    void ToggleEdgeEnabled() { mEdgeEnabled = !mEdgeEnabled; }
+    bool IsEdgeEnabled() const { return mEdgeEnabled; }
 
 private:
     void BuildGeometryPass(ID3D12Device* device);
     void BuildTessellationPass(ID3D12Device* device);
     void BuildShadowPass(ID3D12Device* device);
     void BuildLightingPass(ID3D12Device* device);
+    void BuildPostPass(ID3D12Device* device);
+    void CreateSceneTarget(ID3D12Device* device, UINT width, UINT height);
     void InitDefaultLights();
     void CreateShadowMaps(ID3D12Device* device);
     void UpdateLightingSrvs(ID3D12Device* device);
+    void UpdatePostSrvs(ID3D12Device* device);
     void UpdateShadowCascades(const Camera& camera);
+    void DrawFullscreenQuad(ID3D12GraphicsCommandList* cmdList) const;
 
 private:
     GBuffer mGBuffer;
@@ -99,6 +129,23 @@ private:
     Microsoft::WRL::ComPtr<ID3DBlob> mLightingVs;
     Microsoft::WRL::ComPtr<ID3DBlob> mLightingPs;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mLightingSrvHeap;
+
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> mPostRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> mPostPSO;
+    Microsoft::WRL::ComPtr<ID3DBlob> mPostVs;
+    Microsoft::WRL::ComPtr<ID3DBlob> mPostPs;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mPostSrvHeap;
+    Microsoft::WRL::ComPtr<ID3D12Resource> mSceneColor;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mSceneRtvHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE mSceneRtv{};
+    D3D12_RESOURCE_STATES mSceneState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    std::unique_ptr<UploadBuffer<PostProcessConstants>> mPostCB;
+    bool mFogEnabled = true;
+    bool mEdgeEnabled = true;
+    UINT mSceneWidth = 0;
+    UINT mSceneHeight = 0;
+
+    static constexpr DXGI_FORMAT SceneFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> mShadowRootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> mShadowPSO;

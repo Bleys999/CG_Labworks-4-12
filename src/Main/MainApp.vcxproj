@@ -196,6 +196,9 @@
     <None Include="Shaders\particles_cs.hlsl" />
     <None Include="Shaders\particles_sort.hlsl" />
     <None Include="Shaders\particles.hlsl" />
+    <None Include="Shaders\fullscreen.hlsli" />
+    <None Include="Shaders\deferred_light.hlsl" />
+    <None Include="Shaders\postprocess.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

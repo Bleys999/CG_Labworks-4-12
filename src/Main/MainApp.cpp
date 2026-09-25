@@ -40,6 +40,8 @@ private:
     bool mPrevF5 = false;
     bool mPrevF6 = false;
     bool mPrevF7 = false;
+    bool mPrevF8 = false;
+    bool mPrevF9 = false;
 };
 
 MainApp::MainApp(HINSTANCE hInstance) : D3DApp(hInstance) {}
@@ -88,6 +90,8 @@ void MainApp::Update(const GameTimer& gt)
     const bool f5 = mInput.IsKeyDown(VK_F5);
     const bool f6 = mInput.IsKeyDown(VK_F6);
     const bool f7 = mInput.IsKeyDown(VK_F7);
+    const bool f8 = mInput.IsKeyDown(VK_F8);
+    const bool f9 = mInput.IsKeyDown(VK_F9);
     if (f3 && !mPrevF3)
     {
         mScene.ToggleFrustumCulling();
@@ -113,11 +117,23 @@ void MainApp::Update(const GameTimer& gt)
         mRendering.SetShadowDebugMode(2);
         RefreshWindowCaption();
     }
+    if (f8 && !mPrevF8)
+    {
+        mRendering.ToggleFogEnabled();
+        RefreshWindowCaption();
+    }
+    if (f9 && !mPrevF9)
+    {
+        mRendering.ToggleEdgeEnabled();
+        RefreshWindowCaption();
+    }
     mPrevF3 = f3;
     mPrevF4 = f4;
     mPrevF5 = f5;
     mPrevF6 = f6;
     mPrevF7 = f7;
+    mPrevF8 = f8;
+    mPrevF9 = f9;
 
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
@@ -158,11 +174,13 @@ void MainApp::Draw(const GameTimer& gt)
 
     gbuffer.EndGeometryPass(mCommandList.Get());
 
+    mRendering.DrawDeferredLighting(mCommandList.Get(), mScreenViewport, mScissorRect);
+
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         CurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
     mCommandList->ResourceBarrier(1, &barrier);
 
-    mRendering.DrawDeferredLighting(mCommandList.Get(), CurrentBackBufferView(), mScreenViewport, mScissorRect);
+    mRendering.DrawPostProcess(mCommandList.Get(), CurrentBackBufferView(), mScreenViewport, mScissorRect);
 
     auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(
         CurrentBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -210,7 +228,9 @@ void MainApp::RefreshWindowCaption()
     mMainWndCaption = L"Shadow Debug Mode: " + vizName +
         L"  F3 frustum:" + frustum +
         L"  F4 octree:" + octree +
-        L"  F5/F6/F7  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +
+        L"  F5/F6/F7  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
+        L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +
+        L"  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +
         L"/" + std::to_wstring(mScene.GetObjectCount()) +
         L"  boxes:" + std::to_wstring(mScene.GetCullableCount());
 }

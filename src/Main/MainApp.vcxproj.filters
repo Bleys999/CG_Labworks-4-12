@@ -200,5 +200,14 @@
     <None Include="Shaders\particles.hlsl">
       <Filter>Shader Files</Filter>
     </None>
+    <None Include="Shaders\fullscreen.hlsli">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\deferred_light.hlsl">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\postprocess.hlsl">
+      <Filter>Shader Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
