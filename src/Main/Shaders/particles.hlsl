@@ -11,6 +11,9 @@ cbuffer cbParticleDraw : register(b0)
     float gPad1;
     float3 gCamForward;
     float gReceiveShadow;
+    float gRoughness;
+    float gMetallic;
+    float2 gPadMat;
 };
 
 struct VSOut
@@ -92,8 +95,8 @@ GBufferOut PS(GSOut pin)
 
     GBufferOut o;
     float3 n = normalize(pin.NormalW);
-    o.Albedo = float4(pin.Color.rgb, 1.0f);
-    o.Normal = float4(n * 0.5f + 0.5f, 1.0f);
+    o.Albedo = float4(pin.Color.rgb, gRoughness);
+    o.Normal = float4(n * 0.5f + 0.5f, gMetallic);
     o.WorldPos = float4(pin.PosW, gReceiveShadow > 0.5f ? 1.0f : 0.75f);
     return o;
 }

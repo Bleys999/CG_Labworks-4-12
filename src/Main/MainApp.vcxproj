@@ -158,6 +158,7 @@
     <ClCompile Include="..\Common\Rendering\GBuffer.cpp" />
     <ClCompile Include="..\Common\Rendering\RenderingSystem.cpp" />
     <ClCompile Include="..\Common\Rendering\ParticleSystem.cpp" />
+    <ClCompile Include="..\Common\Rendering\IblMaps.cpp" />
     <ClCompile Include="..\Common\Scene\Scene.cpp" />
     <ClCompile Include="..\Common\Scene\Octree.cpp" />
     <ClCompile Include="..\Common\Assets\GeometryGenerator.cpp" />
@@ -182,6 +183,7 @@
     <ClInclude Include="..\Common\Rendering\GBuffer.h" />
     <ClInclude Include="..\Common\Rendering\RenderingSystem.h" />
     <ClInclude Include="..\Common\Rendering\ParticleSystem.h" />
+    <ClInclude Include="..\Common\Rendering\IblMaps.h" />
     <ClInclude Include="..\Common\Scene\Scene.h" />
     <ClInclude Include="..\Common\Scene\Octree.h" />
     <ClInclude Include="..\Common\Assets\GeometryGenerator.h" />

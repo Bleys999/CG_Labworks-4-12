@@ -4,12 +4,17 @@ Texture2D gAlbedo : register(t0);
 Texture2D gNormal : register(t1);
 Texture2D gWorldPos : register(t2);
 Texture2DArray gShadowMaps : register(t3);
+TextureCube gIrradiance : register(t4);
+TextureCube gPrefilter : register(t5);
+Texture2D gBrdfLut : register(t6);
 SamplerComparisonState gShadowSampler : register(s0);
-SamplerState gShadowMapSampler : register(s1);
+SamplerState gBrdfSampler : register(s1);
+SamplerState gIblSampler : register(s2);
 
 #define MAX_POINT_LIGHTS 8
 #define MAX_SPOT_LIGHTS 4
 #define SHADOW_CASCADES 4
+#define PI 3.14159265f
 
 cbuffer cbPass : register(b0)
 {
@@ -30,6 +35,9 @@ cbuffer cbPass : register(b0)
     float4x4 gCascadeViewProj[SHADOW_CASCADES];
     float4 gCascadeSplits;
     float4 gShadowParams;
+    float4 gCameraRight;
+    float4 gCameraUp;
+    float4 gIblParams;
 };
 
 float3 DecodeNormal(float3 enc)
@@ -41,11 +49,6 @@ float DistanceAttenuation(float dist, float range)
 {
     float f = saturate(1.0f - dist / max(range, 1e-3f));
     return f * f;
-}
-
-float3 Lambert(float3 albedo, float3 N, float3 L, float3 radiance)
-{
-    return albedo * radiance * saturate(dot(N, L));
 }
 
 uint PickCascade(float viewZ)
@@ -107,17 +110,96 @@ float3 CascadeColor(uint cascade)
     return float3(0.0f, 0.0f, 1.0f);
 }
 
+float DistributionGGX(float3 N, float3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float ndh = max(dot(N, H), 0.0f);
+    float ndh2 = ndh * ndh;
+    float d = ndh2 * (a2 - 1.0f) + 1.0f;
+    return a2 / max(PI * d * d, 1e-6f);
+}
+
+float GeometrySchlickGGX(float ndv, float roughness)
+{
+    float r = roughness + 1.0f;
+    float k = (r * r) / 8.0f;
+    return ndv / (ndv * (1.0f - k) + k);
+}
+
+float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
+{
+    return GeometrySchlickGGX(max(dot(N, V), 0.0f), roughness) *
+        GeometrySchlickGGX(max(dot(N, L), 0.0f), roughness);
+}
+
+float3 FresnelSchlick(float cosTheta, float3 f0)
+{
+    return f0 + (1.0f - f0) * pow(saturate(1.0f - cosTheta), 5.0f);
+}
+
+float3 FresnelSchlickRoughness(float cosTheta, float3 f0, float roughness)
+{
+    return f0 + (max(float3(1.0f - roughness, 1.0f - roughness, 1.0f - roughness), f0) - f0) *
+        pow(saturate(1.0f - cosTheta), 5.0f);
+}
+
+float3 DirectPBR(float3 albedo, float metallic, float roughness, float3 N, float3 V, float3 L, float3 radiance)
+{
+    float3 H = normalize(V + L);
+    float ndl = saturate(dot(N, L));
+    float ndv = saturate(dot(N, V));
+    float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
+    float3 F = FresnelSchlick(saturate(dot(H, V)), f0);
+    float D = DistributionGGX(N, H, roughness);
+    float G = GeometrySmith(N, V, L, roughness);
+    float3 spec = (D * G * F) / max(4.0f * ndv * ndl, 1e-4f);
+    float3 kD = (1.0f - F) * (1.0f - metallic);
+    return (kD * albedo + spec * PI) * radiance * ndl;
+}
+
+float3 DirectLambert(float3 albedo, float3 N, float3 L, float3 radiance)
+{
+    return albedo * radiance * saturate(dot(N, L));
+}
+
+float3 ViewRay(float2 uv)
+{
+    float2 ndc = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
+    float aspect = gCameraWorld.w;
+    float tanHalf = gCameraLook.w;
+    float3 look = normalize(gCameraLook.xyz);
+    float3 right = normalize(gCameraRight.xyz);
+    float3 up = normalize(gCameraUp.xyz);
+    return normalize(look + ndc.x * aspect * tanHalf * right + ndc.y * tanHalf * up);
+}
+
 float4 PS(FSOut pin) : SV_Target
 {
     int2 pixel = int2(pin.PosH.xy);
-
     float4 worldS = gWorldPos.Load(int3(pixel, 0));
-    if (worldS.a < 0.5f)
-        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+    float iblScale = gIblParams.x;
+    float maxMip = max(gIblParams.y - 1.0f, 0.0f);
 
-    float3 albedo = gAlbedo.Load(int3(pixel, 0)).rgb;
-    float3 N = DecodeNormal(gNormal.Load(int3(pixel, 0)).xyz);
+    if (worldS.a < 0.5f)
+    {
+        float3 rd = ViewRay(pin.TexC);
+        float3 sky = gPrefilter.SampleLevel(gIblSampler, rd, 0.0f).rgb * iblScale;
+        return float4(sky, 1.0f);
+    }
+
+    float4 albedoS = gAlbedo.Load(int3(pixel, 0));
+    float4 normalS = gNormal.Load(int3(pixel, 0));
+    float3 albedo = albedoS.rgb;
+    float roughness = saturate(albedoS.a);
+    roughness = max(roughness, 0.04f);
+    float metallic = saturate(normalS.a);
+    float3 N = DecodeNormal(normalS.xyz);
     float3 worldPos = worldS.xyz;
+    float3 V = normalize(gCameraWorld.xyz - worldPos);
+    float ndv = saturate(dot(N, V));
+    float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
+
     float viewZ = dot(worldPos - gCameraWorld.xyz, normalize(gCameraLook.xyz));
     uint cascade = PickCascade(viewZ);
 
@@ -130,8 +212,12 @@ float4 PS(FSOut pin) : SV_Target
         shadow = saturate(SampleSunShadow(samplePos));
     }
 
-    float3 Lo = albedo * gAmbientColor.rgb;
-    Lo += Lambert(albedo, N, dirL, dirRadiance) * shadow;
+    const bool useGgx = gIblParams.z < 0.5f;
+    float3 Lo = 0.0f;
+    if (useGgx)
+        Lo = DirectPBR(albedo, metallic, roughness, N, V, dirL, dirRadiance) * shadow;
+    else
+        Lo = DirectLambert(albedo, N, dirL, dirRadiance) * shadow;
 
     uint pointCount = min(gPointCount, MAX_POINT_LIGHTS);
     for (uint i = 0; i < pointCount; ++i)
@@ -141,7 +227,30 @@ float4 PS(FSOut pin) : SV_Target
         float3 L = toLight / max(dist, 1e-5f);
         float atten = DistanceAttenuation(dist, gPointPosRange[i].w);
         float3 radiance = gPointColorIntensity[i].rgb * gPointColorIntensity[i].a * atten;
-        Lo += Lambert(albedo, N, L, radiance);
+        if (useGgx)
+            Lo += DirectPBR(albedo, metallic, roughness, N, V, L, radiance);
+        else
+            Lo += DirectLambert(albedo, N, L, radiance);
+    }
+
+    float iblOcc = lerp(0.14f, 1.0f, shadow);
+    float3 irradiance = gIrradiance.Sample(gIblSampler, N).rgb;
+    if (useGgx)
+    {
+        float3 F = FresnelSchlickRoughness(ndv, f0, roughness);
+        float3 kS = F;
+        float3 kD = (1.0f - kS) * (1.0f - metallic);
+        float3 diffuse = kD * albedo * irradiance;
+        float3 R = reflect(-V, N);
+        float3 prefiltered = gPrefilter.SampleLevel(gIblSampler, R, roughness * maxMip).rgb;
+        float2 brdf = gBrdfLut.Sample(gBrdfSampler, float2(ndv, roughness)).rg;
+        float3 specular = prefiltered * (f0 * brdf.x + brdf.y);
+        specular *= lerp(1.0f, 1.25f, metallic);
+        Lo += (diffuse + specular) * iblScale * iblOcc;
+    }
+    else
+    {
+        Lo += albedo * irradiance * iblScale * lerp(0.08f, 0.22f, shadow);
     }
 
     if (gDebugMode == 2)

@@ -193,6 +193,9 @@ struct ObjectConstants
     float TessNear = 1.0f;
     float TessFar = 1.0f;
     float ReceiveShadow = 1.0f;
-    float Padding[15] = {};
+    float Metallic = 0.0f;
+    float Roughness = 0.5f;
+    float PadMaterial = 0.0f;
+    float Padding[12] = {};
 };
 static_assert(sizeof(ObjectConstants) == 256, "ObjectConstants must be 256 bytes");

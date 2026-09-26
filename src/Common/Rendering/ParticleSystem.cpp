@@ -444,6 +444,8 @@ void ParticleSystem::Draw(ID3D12GraphicsCommandList* cmdList, const Camera& came
     dc.CamUp = camera.GetUp3f();
     dc.CamForward = camera.GetLook3f();
     dc.ReceiveShadow = 1.0f;
+    dc.Roughness = 0.4f;
+    dc.Metallic = 0.0f;
     mDrawCB->CopyData(0, dc);
 
     Transition(cmdList, mBuffers[append].Get(), mBufferState[append],

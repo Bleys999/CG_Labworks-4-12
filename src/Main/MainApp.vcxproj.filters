@@ -76,6 +76,9 @@
     <ClCompile Include="..\Common\Rendering\ParticleSystem.cpp">
       <Filter>Common\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="..\Common\Rendering\IblMaps.cpp">
+      <Filter>Common\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="..\Common\Scene\Camera.cpp">
       <Filter>Common\Scene</Filter>
     </ClCompile>
@@ -139,6 +142,9 @@
       <Filter>Common\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="..\Common\Rendering\ParticleSystem.h">
+      <Filter>Common\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\Rendering\IblMaps.h">
       <Filter>Common\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="..\Common\Scene\Camera.h">

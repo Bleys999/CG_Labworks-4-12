@@ -38,6 +38,8 @@ private:
         std::shared_ptr<Texture> DisplacementTexture;
         Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> SrvHeap;
         DirectX::XMFLOAT4 DiffuseFactor = { 1.0f, 1.0f, 1.0f, 1.0f };
+        float Metallic = 0.0f;
+        float Roughness = 0.55f;
     };
 
     bool LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);

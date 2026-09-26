@@ -314,6 +314,20 @@ LRESULT D3DApp::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_MOUSEMOVE:
         OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
+    case WM_SYSKEYDOWN:
+        if (wParam == VK_F10)
+        {
+            OnKeyDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            return 0;
+        }
+        break;
+    case WM_SYSKEYUP:
+        if (wParam == VK_F10)
+        {
+            OnKeyUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            return 0;
+        }
+        break;
     case WM_KEYDOWN:
         OnKeyDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;

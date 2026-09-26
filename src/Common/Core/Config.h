@@ -49,4 +49,5 @@ struct Config
     static constexpr float BloomThreshold = 0.55f;
     static constexpr float BloomIntensity = 0.65f;
     static constexpr float EdgeStrength = 0.9f;
+    static constexpr float IblIntensity = 1.0f;
 };

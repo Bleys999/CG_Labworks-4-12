@@ -45,7 +45,11 @@ struct ParticleDrawConstants
     float Pad1 = 0.0f;
     DirectX::XMFLOAT3 CamForward = { 0.0f, 0.0f, 1.0f };
     float ReceiveShadow = 1.0f;
-    float Pad[36] = {};
+    float Roughness = 0.45f;
+    float Metallic = 0.0f;
+    float Pad2 = 0.0f;
+    float Pad3 = 0.0f;
+    float Pad[32] = {};
 };
 static_assert(sizeof(ParticleDrawConstants) == 256, "ParticleDrawConstants must be 256 bytes");
 

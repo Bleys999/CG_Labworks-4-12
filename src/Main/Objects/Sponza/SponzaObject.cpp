@@ -148,6 +148,8 @@ void SponzaObject::Draw(ID3D12GraphicsCommandList* cmdList)
         oc.TessNear = Config::TessNear;
         oc.TessFar = Config::TessFar;
         oc.ReceiveShadow = 1.0f;
+        oc.Metallic = batch.Metallic;
+        oc.Roughness = batch.Roughness;
         mObjectCB->CopyData(0, oc);
 
         cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
@@ -277,6 +279,8 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
         std::shared_ptr<Texture> Normal;
         std::shared_ptr<Texture> Displacement;
         XMFLOAT4 Kd = { 1.0f, 1.0f, 1.0f, 1.0f };
+        float Metallic = 0.0f;
+        float Roughness = 0.55f;
     };
 
     std::vector<MatMaps> matTable;
@@ -285,7 +289,7 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
         auto white = mTextureManager->GetWhiteTexture();
         if (!white)
             return false;
-        matTable.push_back({ white, mFlatNormal, mFlatHeight, XMFLOAT4(0.75f, 0.75f, 0.75f, 1.0f) });
+        matTable.push_back({ white, mFlatNormal, mFlatHeight, XMFLOAT4(0.75f, 0.75f, 0.75f, 1.0f), 0.0f, 0.55f });
     }
     else
     {
@@ -319,7 +323,17 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
             }
 
             auto disp = LoadDisplacement(device, cmdList, albedoPath);
-            matTable.push_back({ diffuse, normal, disp, kd });
+            float ns = (float)m.shininess;
+            float rough = 1.0f - (std::max)(0.0f, (std::min)(1.0f, ns / 256.0f));
+            if (ns <= 1.0f)
+                rough = 0.62f;
+            rough = (std::max)(0.18f, (std::min)(0.92f, rough));
+            float metal = 0.0f;
+            std::string nm = m.name;
+            if (nm.find("metal") != std::string::npos || nm.find("gold") != std::string::npos ||
+                nm.find("bronze") != std::string::npos || nm.find("chain") != std::string::npos)
+                metal = 0.85f;
+            matTable.push_back({ diffuse, normal, disp, kd, metal, rough });
         }
     }
 
@@ -350,6 +364,8 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
         batch.NormalTexture = matTable[mid].Normal;
         batch.DisplacementTexture = matTable[mid].Displacement;
         batch.DiffuseFactor = matTable[mid].Kd;
+        batch.Metallic = matTable[mid].Metallic;
+        batch.Roughness = matTable[mid].Roughness;
         if (!BuildBatchHeap(device, batch))
             return;
         mMaterialBatches.push_back(std::move(batch));

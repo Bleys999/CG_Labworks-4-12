@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GBuffer.h"
+#include "IblMaps.h"
 #include "../D3D12/d3dUtil.h"
 #include "../Scene/Camera.h"
 #include <memory>
@@ -28,6 +29,9 @@ struct DeferredLightingConstants
     DirectX::XMFLOAT4X4 CascadeViewProj[4] = {};
     DirectX::XMFLOAT4 CascadeSplits = {};
     DirectX::XMFLOAT4 ShadowParams = {};
+    DirectX::XMFLOAT4 CameraRight = { 1.0f, 0.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT4 CameraUp = { 0.0f, 1.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT4 IblParams = { 1.0f, 5.0f, 0.0f, 0.0f };
 };
 
 struct PostProcessConstants
@@ -56,6 +60,7 @@ class RenderingSystem
 {
 public:
     bool Initialize(ID3D12Device* device);
+    bool InitIbl(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     void Resize(ID3D12Device* device, UINT width, UINT height);
 
     GBuffer& GetGBuffer() { return mGBuffer; }
@@ -92,6 +97,8 @@ public:
     bool IsFogEnabled() const { return mFogEnabled; }
     void ToggleEdgeEnabled() { mEdgeEnabled = !mEdgeEnabled; }
     bool IsEdgeEnabled() const { return mEdgeEnabled; }
+    void CycleNdfMode() { mNdfMode = (mNdfMode + 1) % 2; }
+    UINT GetNdfMode() const { return mNdfMode; }
 
 private:
     void BuildGeometryPass(ID3D12Device* device);
@@ -109,6 +116,7 @@ private:
 
 private:
     GBuffer mGBuffer;
+    IblMaps mIbl;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> mGeometryRootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> mGeometryPSO;
@@ -142,6 +150,7 @@ private:
     std::unique_ptr<UploadBuffer<PostProcessConstants>> mPostCB;
     bool mFogEnabled = true;
     bool mEdgeEnabled = true;
+    UINT mNdfMode = 0;
     UINT mSceneWidth = 0;
     UINT mSceneHeight = 0;
 

@@ -58,6 +58,14 @@ bool RenderingSystem::Initialize(ID3D12Device* device)
     return true;
 }
 
+bool RenderingSystem::InitIbl(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
+{
+    if (!mIbl.Initialize(device, cmdList))
+        return false;
+    UpdateLightingSrvs(device);
+    return true;
+}
+
 void RenderingSystem::Resize(ID3D12Device* device, UINT width, UINT height)
 {
     mGBuffer.Resize(device, width, height);
@@ -70,12 +78,16 @@ void RenderingSystem::InitDefaultLights()
 {
     XMVECTOR sun = XMVector3Normalize(XMVectorSet(0.42f, -0.86f, 0.22f, 0.0f));
     XMStoreFloat4(&mLightingCpu.DirectionalDir, sun);
-    mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 2.35f };
+    mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 6.5f };
     mLightingCpu.AmbientColor = { 0.13f, 0.13f, 0.145f, 1.0f };
 
-    mLightingCpu.PointCount = 1;
-    mLightingCpu.PointPosRange[0] = { 0.0f, 0.2f, 0.0f, 22.0f };
+    mLightingCpu.PointCount = 3;
+    mLightingCpu.PointPosRange[0] = { 0.0f, 0.2f, 0.0f, 16.0f };
     mLightingCpu.PointColorIntensity[0] = { 1.0f, 0.55f, 0.22f, 8.0f };
+    mLightingCpu.PointPosRange[1] = { 0.0f, 5.5f, -9.0f, 14.0f };
+    mLightingCpu.PointColorIntensity[1] = { 1.0f, 0.98f, 0.92f, 12.0f };
+    mLightingCpu.PointPosRange[2] = { 6.0f, 3.5f, 2.0f, 12.0f };
+    mLightingCpu.PointColorIntensity[2] = { 0.55f, 0.75f, 1.0f, 9.0f };
     mLightingCpu.SpotCount = 0;
 }
 
@@ -96,6 +108,9 @@ void RenderingSystem::UpdateLightingConstants(const Camera& camera)
         nBias = (std::max)(0.8f, r * 0.0008f);
     }
     mLightingCpu.ShadowParams = XMFLOAT4(1.0f / (float)Config::ShadowMapSize, 0.0015f, (float)Config::ShadowCascadeCount, nBias);
+    XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraRight), camera.GetRight());
+    XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraUp), camera.GetUp());
+    mLightingCpu.IblParams = XMFLOAT4(Config::IblIntensity, (float)mIbl.PrefilterMipCount(), (float)mNdfMode, 0.0f);
     mLightingCB->CopyData(0, mLightingCpu);
 }
 
@@ -485,10 +500,11 @@ void RenderingSystem::UpdateLightingSrvs(ID3D12Device* device)
     if (!mGBuffer.AlbedoResource() || !mShadowMaps)
         return;
 
-    if (!mLightingSrvHeap)
+    if (!mLightingSrvHeap || mLightingSrvHeap->GetDesc().NumDescriptors < 7)
     {
+        mLightingSrvHeap.Reset();
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 4;
+        heapDesc.NumDescriptors = 7;
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mLightingSrvHeap)));
@@ -524,6 +540,38 @@ void RenderingSystem::UpdateLightingSrvs(ID3D12Device* device)
     shadowSrv.Texture2DArray.ArraySize = (UINT)Config::ShadowCascadeCount;
     shadowSrv.Texture2DArray.ResourceMinLODClamp = 0.0f;
     device->CreateShaderResourceView(mShadowMaps.Get(), &shadowSrv, cpu);
+
+    if (mIbl.Irradiance() && mIbl.Prefilter() && mIbl.BrdfLut())
+    {
+        cpu.Offset(1, inc);
+        D3D12_SHADER_RESOURCE_VIEW_DESC cube = {};
+        cube.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        cube.Format = mIbl.Irradiance()->GetDesc().Format;
+        if (cube.Format == DXGI_FORMAT_BC6H_TYPELESS)
+            cube.Format = DXGI_FORMAT_BC6H_UF16;
+        cube.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+        cube.TextureCube.MostDetailedMip = 0;
+        cube.TextureCube.MipLevels = 1;
+        cube.TextureCube.ResourceMinLODClamp = 0.0f;
+        device->CreateShaderResourceView(mIbl.Irradiance(), &cube, cpu);
+
+        cpu.Offset(1, inc);
+        cube.Format = mIbl.Prefilter()->GetDesc().Format;
+        if (cube.Format == DXGI_FORMAT_BC6H_TYPELESS)
+            cube.Format = DXGI_FORMAT_BC6H_UF16;
+        cube.TextureCube.MipLevels = mIbl.PrefilterMipCount();
+        device->CreateShaderResourceView(mIbl.Prefilter(), &cube, cpu);
+
+        cpu.Offset(1, inc);
+        D3D12_SHADER_RESOURCE_VIEW_DESC lut = {};
+        lut.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        lut.Format = mIbl.BrdfLut()->GetDesc().Format;
+        lut.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        lut.Texture2D.MostDetailedMip = 0;
+        lut.Texture2D.MipLevels = 1;
+        lut.Texture2D.ResourceMinLODClamp = 0.0f;
+        device->CreateShaderResourceView(mIbl.BrdfLut(), &lut, cpu);
+    }
 }
 
 void RenderingSystem::UpdateShadowCascades(const Camera& camera)
@@ -719,7 +767,7 @@ void RenderingSystem::BuildLightingPass(ID3D12Device* device)
     mLightingVs = CompileShaderFile(L"deferred_light.hlsl", "VSFullscreen", "vs_5_0");
     mLightingPs = CompileShaderFile(L"deferred_light.hlsl", "PS", "ps_5_0");
 
-    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
+    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);
 
     CD3DX12_ROOT_PARAMETER slotRootParameter[2];
     slotRootParameter[0].InitAsConstantBufferView(0);
@@ -742,7 +790,7 @@ void RenderingSystem::BuildLightingPass(ID3D12Device* device)
 
     CD3DX12_STATIC_SAMPLER_DESC mapSampler(
         1,
-        D3D12_FILTER_MIN_MAG_MIP_POINT,
+        D3D12_FILTER_MIN_MAG_MIP_LINEAR,
         D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
         D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
         D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -755,9 +803,24 @@ void RenderingSystem::BuildLightingPass(ID3D12Device* device)
         D3D12_SHADER_VISIBILITY_PIXEL,
         0);
 
-    CD3DX12_STATIC_SAMPLER_DESC samplers[2] = { shadowSampler, mapSampler };
+    CD3DX12_STATIC_SAMPLER_DESC iblSampler(
+        2,
+        D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+        D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        0.0f,
+        1,
+        D3D12_COMPARISON_FUNC_NEVER,
+        D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
+        0.0f,
+        D3D12_FLOAT32_MAX,
+        D3D12_SHADER_VISIBILITY_PIXEL,
+        0);
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 2, samplers,
+    CD3DX12_STATIC_SAMPLER_DESC samplers[3] = { shadowSampler, mapSampler, iblSampler };
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 3, samplers,
         D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
     ComPtr<ID3DBlob> serializedRootSig;

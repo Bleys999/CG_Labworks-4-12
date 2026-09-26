@@ -54,11 +54,47 @@ bool Scene::SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList*
         const float s = distScale(rng);
         box->SetScale(s, s, s);
         box->SetDiffuseFactor(XMFLOAT4(distColor(rng), distColor(rng), distColor(rng), 1.0f));
+        box->SetMetallic(0.0f);
+        box->SetRoughness(0.22f + distColor(rng) * 0.45f);
         box->SetCullable(true);
 
         if (!box->Initialize(device, cmdList, textureManager))
             return false;
 
+        AddObject(std::move(box));
+        ++mCullableCount;
+    }
+
+    struct Showcase
+    {
+        float x;
+        float y;
+        float z;
+        float s;
+        XMFLOAT4 color;
+        float metallic;
+        float roughness;
+    };
+    const Showcase show[] =
+    {
+        { -6.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.97f, 0.98f, 1.00f, 1.0f), 1.0f, 0.16f },
+        { -3.75f, 1.35f, -10.0f, 1.15f, XMFLOAT4(1.00f, 0.82f, 0.22f, 1.0f), 1.0f, 0.20f },
+        { -1.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.95f, 0.64f, 0.54f, 1.0f), 1.0f, 0.24f },
+        {  1.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(1.00f, 0.78f, 0.18f, 1.0f), 1.0f, 0.18f },
+        {  3.75f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.62f, 0.72f, 0.88f, 1.0f), 1.0f, 0.18f },
+        {  6.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.56f, 0.56f, 0.58f, 1.0f), 1.0f, 0.22f }
+    };
+    for (int i = 0; i < 6; ++i)
+    {
+        auto box = std::make_unique<BoxObject>(std::string("Metal") + std::to_string(i));
+        box->SetPosition(show[i].x, show[i].y, show[i].z);
+        box->SetScale(show[i].s, show[i].s, show[i].s);
+        box->SetDiffuseFactor(show[i].color);
+        box->SetMetallic(show[i].metallic);
+        box->SetRoughness(show[i].roughness);
+        box->SetCullable(true);
+        if (!box->Initialize(device, cmdList, textureManager))
+            return false;
         AddObject(std::move(box));
         ++mCullableCount;
     }

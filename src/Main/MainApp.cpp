@@ -42,6 +42,7 @@ private:
     bool mPrevF7 = false;
     bool mPrevF8 = false;
     bool mPrevF9 = false;
+    bool mPrevF10 = false;
 };
 
 MainApp::MainApp(HINSTANCE hInstance) : D3DApp(hInstance) {}
@@ -58,6 +59,7 @@ bool MainApp::Initialize()
 
     if (!mTextureManager.Initialize(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mRendering.Initialize(md3dDevice.Get())) return false;
+    if (!mRendering.InitIbl(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mParticles.Initialize(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mScene.Initialize(md3dDevice.Get(), mCommandList.Get(), &mTextureManager)) return false;
     if (GameObject* sponza = mScene.GetObject("Sponza"))
@@ -92,6 +94,7 @@ void MainApp::Update(const GameTimer& gt)
     const bool f7 = mInput.IsKeyDown(VK_F7);
     const bool f8 = mInput.IsKeyDown(VK_F8);
     const bool f9 = mInput.IsKeyDown(VK_F9);
+    const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N') || mInput.IsKeyDown('n');
     if (f3 && !mPrevF3)
     {
         mScene.ToggleFrustumCulling();
@@ -127,6 +130,11 @@ void MainApp::Update(const GameTimer& gt)
         mRendering.ToggleEdgeEnabled();
         RefreshWindowCaption();
     }
+    if (f10 && !mPrevF10)
+    {
+        mRendering.CycleNdfMode();
+        RefreshWindowCaption();
+    }
     mPrevF3 = f3;
     mPrevF4 = f4;
     mPrevF5 = f5;
@@ -134,6 +142,7 @@ void MainApp::Update(const GameTimer& gt)
     mPrevF7 = f7;
     mPrevF8 = f8;
     mPrevF9 = f9;
+    mPrevF10 = f10;
 
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
@@ -220,13 +229,11 @@ void MainApp::RefreshWindowCaption()
     std::wstring frustum = mScene.IsFrustumCullingEnabled() ? L"ON" : L"OFF";
     std::wstring octree = mScene.IsOctreeCullingEnabled() ? L"ON" : L"OFF";
     const UINT viz = mRendering.GetShadowDebugMode();
-    std::wstring vizName = L"Normal";
-    if (viz == 1)
-        vizName = L"No Shadows";
-    else if (viz == 2)
-        vizName = L"Cascade Colors";
-    mMainWndCaption = L"Shadow Debug Mode: " + vizName +
-        L"  F3 frustum:" + frustum +
+    const UINT shadowOn = (viz == 1) ? 0 : 1;
+    std::wstring ndfName = mRendering.GetNdfMode() == 0 ? L"GGX" : L"Off";
+    mMainWndCaption = L"NDF Mode: " + ndfName +
+        L" | Shadow: " + std::to_wstring(shadowOn) +
+        L"  F10  F3 frustum:" + frustum +
         L"  F4 octree:" + octree +
         L"  F5/F6/F7  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
         L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +

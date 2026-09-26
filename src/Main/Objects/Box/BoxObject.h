@@ -23,6 +23,8 @@ public:
     virtual void UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj) override;
 
     void SetDiffuseFactor(const DirectX::XMFLOAT4& color) { mDiffuseFactor = color; }
+    void SetMetallic(float metallic) { mMetallic = metallic; }
+    void SetRoughness(float roughness) { mRoughness = roughness; }
 
 private:
     bool CreateSharedGeometry(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
@@ -32,6 +34,8 @@ private:
     std::unique_ptr<UploadBuffer<ObjectConstants>> mObjectCB;
     std::shared_ptr<Texture> mTexture;
     DirectX::XMFLOAT4 mDiffuseFactor = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float mMetallic = 0.0f;
+    float mRoughness = 0.55f;
 
     static std::shared_ptr<MeshGeometry> sSharedGeometry;
     static const std::array<Vertex, 8> sVertices;
