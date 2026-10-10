@@ -35,6 +35,9 @@
     <Filter Include="Main\Objects\Box">
       <UniqueIdentifier>{a1b2c3d4-0006-0000-0000-000000000001}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Main\Objects\Chandelier">
+      <UniqueIdentifier>{a1b2c3d4-0009-0000-0000-000000000001}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Main\Objects\Tess">
       <UniqueIdentifier>{a1b2c3d4-0008-0000-0000-000000000001}</UniqueIdentifier>
     </Filter>
@@ -48,6 +51,9 @@
     </ClCompile>
     <ClCompile Include="Objects\Box\BoxObject.cpp">
       <Filter>Main\Objects\Box</Filter>
+    </ClCompile>
+    <ClCompile Include="Objects\Chandelier\ChandelierObject.cpp">
+      <Filter>Main\Objects\Chandelier</Filter>
     </ClCompile>
     <ClCompile Include="Objects\Tess\TessellatedObject.cpp">
       <Filter>Main\Objects\Tess</Filter>
@@ -110,6 +116,9 @@
   <ItemGroup>
     <ClInclude Include="Objects\Box\BoxObject.h">
       <Filter>Main\Objects\Box</Filter>
+    </ClInclude>
+    <ClInclude Include="Objects\Chandelier\ChandelierObject.h">
+      <Filter>Main\Objects\Chandelier</Filter>
     </ClInclude>
     <ClInclude Include="Objects\Tess\TessellatedObject.h">
       <Filter>Main\Objects\Tess</Filter>

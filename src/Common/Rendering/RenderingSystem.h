@@ -32,6 +32,7 @@ struct DeferredLightingConstants
     DirectX::XMFLOAT4 CameraRight = { 1.0f, 0.0f, 0.0f, 0.0f };
     DirectX::XMFLOAT4 CameraUp = { 0.0f, 1.0f, 0.0f, 0.0f };
     DirectX::XMFLOAT4 IblParams = { 1.0f, 5.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT4X4 InvViewProj = MathHelper::Identity4x4();
 };
 
 struct PostProcessConstants
@@ -47,7 +48,8 @@ struct PostProcessConstants
     float PostEnable = 1.0f;
     float EdgeStrength = 0.9f;
     float Pad0 = 0.0f;
-    float Pad[48] = {};
+    DirectX::XMFLOAT4X4 InvViewProj = MathHelper::Identity4x4();
+    float Pad[32] = {};
 };
 static_assert(sizeof(PostProcessConstants) == 256, "PostProcessConstants must be 256 bytes");
 
@@ -81,6 +83,8 @@ public:
     void SetShadowDebugMode(UINT mode);
     UINT GetShadowDebugMode() const { return mLightingCpu.DebugMode; }
     void SetShadowCasterBounds(const DirectX::BoundingBox& bounds);
+    void SetSpotCount(UINT count);
+    void SetSpotLight(UINT index, const DirectX::XMFLOAT4& posRange, const DirectX::XMFLOAT4& dirCosine, const DirectX::XMFLOAT4& colorIntensity);
 
     void UpdateLightingConstants(const Camera& camera);
     void DrawDeferredLighting(
@@ -112,7 +116,7 @@ private:
     void UpdateLightingSrvs(ID3D12Device* device);
     void UpdatePostSrvs(ID3D12Device* device);
     void UpdateShadowCascades(const Camera& camera);
-    void DrawFullscreenQuad(ID3D12GraphicsCommandList* cmdList) const;
+    void DrawFullscreenTriangle(ID3D12GraphicsCommandList* cmdList) const;
 
 private:
     GBuffer mGBuffer;

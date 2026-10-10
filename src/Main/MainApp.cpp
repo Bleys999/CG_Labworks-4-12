@@ -3,6 +3,7 @@
 #include "../Common/Scene/Scene.h"
 #include "../Common/Rendering/RenderingSystem.h"
 #include "../Common/Rendering/ParticleSystem.h"
+#include "Objects/Chandelier/ChandelierObject.h"
 #include "../Common/Core/Input.h"
 #include "../Common/Assets/TextureManager.h"
 #include "../Common/Core/Config.h"
@@ -147,6 +148,23 @@ void MainApp::Update(const GameTimer& gt)
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
     mScene.Update(gt, mCamera);
+
+    const auto& lamps = mScene.GetChandeliers();
+    UINT spotCount = (UINT)lamps.size();
+    if (spotCount > kMaxSpotLights)
+        spotCount = kMaxSpotLights;
+    mRendering.SetSpotCount(spotCount);
+    const float cosOuter = cosf(XMConvertToRadians(17.0f));
+    for (UINT i = 0; i < spotCount; ++i)
+    {
+        const XMFLOAT3 p = lamps[i]->GetLightPosition();
+        const XMFLOAT3 d = lamps[i]->GetLightDirection();
+        mRendering.SetSpotLight(
+            i,
+            XMFLOAT4(p.x, p.y, p.z, 380.0f),
+            XMFLOAT4(d.x, d.y, d.z, cosOuter),
+            XMFLOAT4(1.0f, 0.74f, 0.32f, 520.0f));
+    }
 }
 
 void MainApp::Draw(const GameTimer& gt)

@@ -4,7 +4,6 @@ void GBuffer::ReleaseSizeDependentResources()
 {
     mAlbedo.Reset();
     mNormal.Reset();
-    mWorldPos.Reset();
     mDepthStencil.Reset();
     mRtvHeap.Reset();
     mDsvHeap.Reset();
@@ -72,18 +71,6 @@ bool GBuffer::Resize(ID3D12Device* device, UINT width, UINT height)
         &normalClear,
         IID_PPV_ARGS(&mNormal)));
 
-    colorDesc.Format = WorldPosFormat;
-    D3D12_CLEAR_VALUE posClear = {};
-    posClear.Format = WorldPosFormat;
-    posClear.Color[0] = posClear.Color[1] = posClear.Color[2] = posClear.Color[3] = 0.0f;
-    ThrowIfFailed(device->CreateCommittedResource(
-        &defaultHeap,
-        D3D12_HEAP_FLAG_NONE,
-        &colorDesc,
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        &posClear,
-        IID_PPV_ARGS(&mWorldPos)));
-
     D3D12_RESOURCE_DESC depthDesc = {};
     depthDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthDesc.Width = width;
@@ -122,7 +109,7 @@ bool GBuffer::Resize(ID3D12Device* device, UINT width, UINT height)
     ThrowIfFailed(device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mDsvHeap)));
 
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = ColorTargetCount;
+    srvHeapDesc.NumDescriptors = ColorTargetCount + 1;
     srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     ThrowIfFailed(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvHeap)));
@@ -133,9 +120,6 @@ bool GBuffer::Resize(ID3D12Device* device, UINT width, UINT height)
     rtvH.Offset(1, mRtvDescriptorSize);
     mNormalRtv = rtvH;
     device->CreateRenderTargetView(mNormal.Get(), nullptr, mNormalRtv);
-    rtvH.Offset(1, mRtvDescriptorSize);
-    mWorldPosRtv = rtvH;
-    device->CreateRenderTargetView(mWorldPos.Get(), nullptr, mWorldPosRtv);
 
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
     dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
@@ -170,8 +154,8 @@ void GBuffer::CreateSrvs(ID3D12Device* device)
     device->CreateShaderResourceView(mNormal.Get(), &srv, h);
     h.Offset(1, mCbvSrvUavDescriptorSize);
 
-    srv.Format = WorldPosFormat;
-    device->CreateShaderResourceView(mWorldPos.Get(), &srv, h);
+    srv.Format = DepthSrvFormat;
+    device->CreateShaderResourceView(mDepthStencil.Get(), &srv, h);
 }
 
 void GBuffer::TransitionToGeometryWrite(ID3D12GraphicsCommandList* cmdList)
@@ -184,8 +168,8 @@ void GBuffer::TransitionToGeometryWrite(ID3D12GraphicsCommandList* cmdList)
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
     barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(mNormal.Get(),
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    barriers[2] = CD3DX12_RESOURCE_BARRIER::Transition(mWorldPos.Get(),
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    barriers[2] = CD3DX12_RESOURCE_BARRIER::Transition(mDepthStencil.Get(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
     cmdList->ResourceBarrier(3, barriers);
     mColorTargetsShaderRead = false;
 }
@@ -197,8 +181,8 @@ void GBuffer::TransitionToShaderRead(ID3D12GraphicsCommandList* cmdList)
         D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(mNormal.Get(),
         D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    barriers[2] = CD3DX12_RESOURCE_BARRIER::Transition(mWorldPos.Get(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    barriers[2] = CD3DX12_RESOURCE_BARRIER::Transition(mDepthStencil.Get(),
+        D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cmdList->ResourceBarrier(3, barriers);
     mColorTargetsShaderRead = true;
 }
@@ -208,8 +192,6 @@ void GBuffer::Clear(ID3D12GraphicsCommandList* cmdList, const float albedoClear[
     cmdList->ClearRenderTargetView(mAlbedoRtv, albedoClear, 0, nullptr);
     float nClear[4] = { 0.5f, 0.5f, 1.0f, 1.0f };
     cmdList->ClearRenderTargetView(mNormalRtv, nClear, 0, nullptr);
-    float pClear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    cmdList->ClearRenderTargetView(mWorldPosRtv, pClear, 0, nullptr);
     cmdList->ClearDepthStencilView(mDepthDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 }
 
@@ -221,8 +203,7 @@ void GBuffer::BeginGeometryPass(ID3D12GraphicsCommandList* cmdList, const float 
     D3D12_CPU_DESCRIPTOR_HANDLE rtvs[ColorTargetCount] =
     {
         mAlbedoRtv,
-        mNormalRtv,
-        mWorldPosRtv
+        mNormalRtv
     };
     cmdList->OMSetRenderTargets(ColorTargetCount, rtvs, FALSE, &mDepthDsv);
 }

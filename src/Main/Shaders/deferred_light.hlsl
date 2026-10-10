@@ -2,7 +2,7 @@
 
 Texture2D gAlbedo : register(t0);
 Texture2D gNormal : register(t1);
-Texture2D gWorldPos : register(t2);
+Texture2D gDepth : register(t2);
 Texture2DArray gShadowMaps : register(t3);
 TextureCube gIrradiance : register(t4);
 TextureCube gPrefilter : register(t5);
@@ -38,6 +38,7 @@ cbuffer cbPass : register(b0)
     float4 gCameraRight;
     float4 gCameraUp;
     float4 gIblParams;
+    float4x4 gInvViewProj;
 };
 
 float3 DecodeNormal(float3 enc)
@@ -177,11 +178,11 @@ float3 ViewRay(float2 uv)
 float4 PS(FSOut pin) : SV_Target
 {
     int2 pixel = int2(pin.PosH.xy);
-    float4 worldS = gWorldPos.Load(int3(pixel, 0));
+    float depth = gDepth.Load(int3(pixel, 0)).r;
     float iblScale = gIblParams.x;
     float maxMip = max(gIblParams.y - 1.0f, 0.0f);
 
-    if (worldS.a < 0.5f)
+    if (depth >= 1.0f)
     {
         float3 rd = ViewRay(pin.TexC);
         float3 sky = gPrefilter.SampleLevel(gIblSampler, rd, 0.0f).rgb * iblScale;
@@ -195,7 +196,7 @@ float4 PS(FSOut pin) : SV_Target
     roughness = max(roughness, 0.04f);
     float metallic = saturate(normalS.a);
     float3 N = DecodeNormal(normalS.xyz);
-    float3 worldPos = worldS.xyz;
+    float3 worldPos = ReconstructWorld(pin.TexC, depth, gInvViewProj);
     float3 V = normalize(gCameraWorld.xyz - worldPos);
     float ndv = saturate(dot(N, V));
     float3 f0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
@@ -227,6 +228,25 @@ float4 PS(FSOut pin) : SV_Target
         float3 L = toLight / max(dist, 1e-5f);
         float atten = DistanceAttenuation(dist, gPointPosRange[i].w);
         float3 radiance = gPointColorIntensity[i].rgb * gPointColorIntensity[i].a * atten;
+        if (useGgx)
+            Lo += DirectPBR(albedo, metallic, roughness, N, V, L, radiance);
+        else
+            Lo += DirectLambert(albedo, N, L, radiance);
+    }
+
+    uint spotCount = min(gSpotCount, MAX_SPOT_LIGHTS);
+    for (uint i = 0; i < spotCount; ++i)
+    {
+        float3 toLight = gSpotPosRange[i].xyz - worldPos;
+        float dist = length(toLight);
+        float3 L = toLight / max(dist, 1e-5f);
+        float atten = DistanceAttenuation(dist, gSpotPosRange[i].w);
+        float3 spotDir = normalize(gSpotDirCosine[i].xyz);
+        float cosOuter = gSpotDirCosine[i].w;
+        float cosInner = lerp(cosOuter, 1.0f, 0.38f);
+        float cone = smoothstep(cosOuter, cosInner, saturate(dot(-L, spotDir)));
+        cone *= cone;
+        float3 radiance = gSpotColorIntensity[i].rgb * gSpotColorIntensity[i].a * atten * cone;
         if (useGgx)
             Lo += DirectPBR(albedo, metallic, roughness, N, V, L, radiance);
         else

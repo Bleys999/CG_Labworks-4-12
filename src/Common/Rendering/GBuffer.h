@@ -5,11 +5,11 @@
 class GBuffer
 {
 public:
-    static constexpr UINT ColorTargetCount = 3;
+    static constexpr UINT ColorTargetCount = 2;
     static constexpr DXGI_FORMAT AlbedoFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     static constexpr DXGI_FORMAT NormalFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    static constexpr DXGI_FORMAT WorldPosFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
     static constexpr DXGI_FORMAT DepthFormat = DXGI_FORMAT_D32_FLOAT;
+    static constexpr DXGI_FORMAT DepthSrvFormat = DXGI_FORMAT_R32_FLOAT;
 
     GBuffer() = default;
     ~GBuffer() = default;
@@ -26,7 +26,6 @@ public:
 
     D3D12_CPU_DESCRIPTOR_HANDLE AlbedoRTV() const { return mAlbedoRtv; }
     D3D12_CPU_DESCRIPTOR_HANDLE NormalRTV() const { return mNormalRtv; }
-    D3D12_CPU_DESCRIPTOR_HANDLE WorldPosRTV() const { return mWorldPosRtv; }
     D3D12_CPU_DESCRIPTOR_HANDLE DepthDSV() const { return mDepthDsv; }
 
     ID3D12DescriptorHeap* SrvHeap() const { return mSrvHeap.Get(); }
@@ -34,7 +33,7 @@ public:
 
     ID3D12Resource* AlbedoResource() const { return mAlbedo.Get(); }
     ID3D12Resource* NormalResource() const { return mNormal.Get(); }
-    ID3D12Resource* WorldPosResource() const { return mWorldPos.Get(); }
+    ID3D12Resource* DepthResource() const { return mDepthStencil.Get(); }
 
     UINT Width() const { return mWidth; }
     UINT Height() const { return mHeight; }
@@ -48,7 +47,6 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12Resource> mAlbedo;
     Microsoft::WRL::ComPtr<ID3D12Resource> mNormal;
-    Microsoft::WRL::ComPtr<ID3D12Resource> mWorldPos;
     Microsoft::WRL::ComPtr<ID3D12Resource> mDepthStencil;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mRtvHeap;
@@ -57,7 +55,6 @@ private:
 
     D3D12_CPU_DESCRIPTOR_HANDLE mAlbedoRtv{};
     D3D12_CPU_DESCRIPTOR_HANDLE mNormalRtv{};
-    D3D12_CPU_DESCRIPTOR_HANDLE mWorldPosRtv{};
     D3D12_CPU_DESCRIPTOR_HANDLE mDepthDsv{};
 
     D3D12_CPU_DESCRIPTOR_HANDLE mSrvCpuStart{};

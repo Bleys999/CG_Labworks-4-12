@@ -75,6 +75,20 @@ namespace
             v2.Tangent = tf;
         }
     }
+
+    bool IsSponzaChandelierShape(const std::string& name)
+    {
+        return name.find("vase_hanging") != std::string::npos ||
+            name.find("chain") != std::string::npos;
+    }
+
+    struct LampPart
+    {
+        std::vector<ObjVertex> Vertices;
+        float SumX = 0.0f;
+        float SumY = 0.0f;
+        float SumZ = 0.0f;
+    };
 }
 
 SponzaObject::SponzaObject() : GameObject("Sponza")
@@ -348,6 +362,8 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
 
     int activeMat = -1;
     UINT rangeStart = 0;
+    std::vector<LampPart> lampParts;
+    mExtractedChandeliers.clear();
 
     auto flushRange = [&](UINT rangeEnd)
     {
@@ -376,6 +392,47 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
     {
         size_t index_offset = 0;
         const auto& midVec = shapes[s].mesh.material_ids;
+
+        if (IsSponzaChandelierShape(shapes[s].name))
+        {
+            LampPart part;
+            for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++)
+            {
+                int fv = shapes[s].mesh.num_face_vertices[f];
+                for (size_t v = 0; v < (size_t)fv; v++)
+                {
+                    tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                    float vx = attrib.vertices[3 * idx.vertex_index + 0];
+                    float vy = attrib.vertices[3 * idx.vertex_index + 1];
+                    float vz = attrib.vertices[3 * idx.vertex_index + 2];
+                    float nx = 0.0f, ny = 1.0f, nz = 0.0f;
+                    if (idx.normal_index >= 0)
+                    {
+                        nx = attrib.normals[3 * idx.normal_index + 0];
+                        ny = attrib.normals[3 * idx.normal_index + 1];
+                        nz = attrib.normals[3 * idx.normal_index + 2];
+                    }
+                    float tx = 0.0f, ty = 0.0f;
+                    if (hasTexCoords && idx.texcoord_index >= 0)
+                    {
+                        tx = attrib.texcoords[2 * idx.texcoord_index + 0];
+                        ty = attrib.texcoords[2 * idx.texcoord_index + 1];
+                    }
+                    ObjVertex vertex;
+                    vertex.Pos = XMFLOAT3(vx, vy, vz);
+                    vertex.Normal = XMFLOAT3(nx, ny, nz);
+                    vertex.TexC = XMFLOAT2(tx, ty);
+                    part.Vertices.push_back(vertex);
+                    part.SumX += vx;
+                    part.SumY += vy;
+                    part.SumZ += vz;
+                }
+                index_offset += (size_t)fv;
+            }
+            if (!part.Vertices.empty())
+                lampParts.push_back(std::move(part));
+            continue;
+        }
 
         for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++)
         {
@@ -445,6 +502,95 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
     }
 
     flushRange((UINT)indices.size());
+
+    {
+        const float mergeDistSq = 80.0f * 80.0f;
+        struct Cluster
+        {
+            std::vector<int> Ids;
+            float Cx = 0.0f;
+            float Cz = 0.0f;
+            int Count = 0;
+        };
+        std::vector<Cluster> clusters;
+        for (int i = 0; i < (int)lampParts.size(); ++i)
+        {
+            const LampPart& part = lampParts[i];
+            const float inv = 1.0f / (float)part.Vertices.size();
+            const float cx = part.SumX * inv;
+            const float cz = part.SumZ * inv;
+            int found = -1;
+            float best = mergeDistSq;
+            for (int c = 0; c < (int)clusters.size(); ++c)
+            {
+                const float dx = cx - clusters[c].Cx;
+                const float dz = cz - clusters[c].Cz;
+                const float d2 = dx * dx + dz * dz;
+                if (d2 < best)
+                {
+                    best = d2;
+                    found = c;
+                }
+            }
+            if (found < 0)
+            {
+                Cluster cl;
+                cl.Ids.push_back(i);
+                cl.Cx = cx;
+                cl.Cz = cz;
+                cl.Count = 1;
+                clusters.push_back(cl);
+            }
+            else
+            {
+                Cluster& cl = clusters[found];
+                cl.Ids.push_back(i);
+                cl.Cx = (cl.Cx * (float)cl.Count + cx) / (float)(cl.Count + 1);
+                cl.Cz = (cl.Cz * (float)cl.Count + cz) / (float)(cl.Count + 1);
+                cl.Count += 1;
+            }
+        }
+
+        for (const Cluster& cl : clusters)
+        {
+            ExtractedChandelier lamp;
+            XMFLOAT3 bmin(FLT_MAX, FLT_MAX, FLT_MAX);
+            XMFLOAT3 bmax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+            for (int id : cl.Ids)
+            {
+                for (const ObjVertex& v : lampParts[id].Vertices)
+                {
+                    lamp.Vertices.push_back(v);
+                    bmin.x = (std::min)(bmin.x, v.Pos.x);
+                    bmin.y = (std::min)(bmin.y, v.Pos.y);
+                    bmin.z = (std::min)(bmin.z, v.Pos.z);
+                    bmax.x = (std::max)(bmax.x, v.Pos.x);
+                    bmax.y = (std::max)(bmax.y, v.Pos.y);
+                    bmax.z = (std::max)(bmax.z, v.Pos.z);
+                }
+            }
+            if (lamp.Vertices.size() < 3 || lamp.Vertices.size() > 65535)
+                continue;
+
+            lamp.HangPivot = XMFLOAT3(0.5f * (bmin.x + bmax.x), bmax.y, 0.5f * (bmin.z + bmax.z));
+            for (ObjVertex& v : lamp.Vertices)
+            {
+                v.Pos.x -= lamp.HangPivot.x;
+                v.Pos.y -= lamp.HangPivot.y;
+                v.Pos.z -= lamp.HangPivot.z;
+            }
+            const float localMinY = bmin.y - lamp.HangPivot.y;
+            const float localMaxY = bmax.y - lamp.HangPivot.y;
+            lamp.LightLocal = XMFLOAT3(0.0f, localMinY + 0.12f * (localMaxY - localMinY), 0.0f);
+            lamp.Indices.resize(lamp.Vertices.size());
+            for (uint16_t i = 0; i < (uint16_t)lamp.Indices.size(); ++i)
+                lamp.Indices[i] = i;
+            BoundingBox::CreateFromPoints(lamp.LocalBounds,
+                XMVectorSet(bmin.x - lamp.HangPivot.x, localMinY, bmin.z - lamp.HangPivot.z, 0.0f),
+                XMVectorSet(bmax.x - lamp.HangPivot.x, localMaxY, bmax.z - lamp.HangPivot.z, 0.0f));
+            mExtractedChandeliers.push_back(std::move(lamp));
+        }
+    }
 
     if (vertices.empty())
     {

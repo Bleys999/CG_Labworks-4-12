@@ -316,7 +316,6 @@ void ParticleSystem::BuildDraw(ID3D12Device* device)
     pso.NumRenderTargets = GBuffer::ColorTargetCount;
     pso.RTVFormats[0] = GBuffer::AlbedoFormat;
     pso.RTVFormats[1] = GBuffer::NormalFormat;
-    pso.RTVFormats[2] = GBuffer::WorldPosFormat;
     pso.DSVFormat = GBuffer::DepthFormat;
     pso.SampleDesc.Count = 1;
     pso.SampleDesc.Quality = 0;

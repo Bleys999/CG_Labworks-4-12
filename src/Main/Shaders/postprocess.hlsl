@@ -3,7 +3,7 @@
 Texture2D gScene : register(t0);
 Texture2D gAlbedo : register(t1);
 Texture2D gNormal : register(t2);
-Texture2D gWorldPos : register(t3);
+Texture2D gDepth : register(t3);
 SamplerState gLinearClamp : register(s0);
 SamplerState gPointClamp : register(s1);
 
@@ -20,6 +20,7 @@ cbuffer cbPost : register(b0)
     float gPostEnable;
     float gEdgeStrength;
     float gPad;
+    float4x4 gInvViewProj;
 };
 
 float Luma(float3 c)
@@ -55,7 +56,7 @@ float3 ApplyBloom(float3 color, float2 uv)
     return color + (acc / max(wsum, 1e-4f)) * gBloomIntensity;
 }
 
-float3 ApplyFog(float3 color, float4 worldS, float3 albedo, float3 normalEnc)
+float3 ApplyFog(float3 color, float depth, float3 worldPos, float3 albedo, float3 normalEnc)
 {
     if (gFogStrength <= 0.0f)
         return color;
@@ -63,10 +64,10 @@ float3 ApplyFog(float3 color, float4 worldS, float3 albedo, float3 normalEnc)
     float3 n = normalize(normalEnc * 2.0f - 1.0f);
     float3 fogCol = lerp(gFogColor, gFogColor * saturate(albedo + 0.35f), 0.18f);
 
-    if (worldS.a < 0.5f)
+    if (depth >= 1.0f)
         return lerp(color, fogCol, saturate(gFogStrength));
 
-    float dist = length(worldS.xyz - gCameraWorld);
+    float dist = length(worldPos - gCameraWorld);
     float t = saturate((dist - gFogStart) / max(gFogEnd - gFogStart, 1.0f));
     t = t * t * (3.0f - 2.0f * t);
     t *= lerp(1.0f, 1.12f, saturate(-n.y));
@@ -87,7 +88,8 @@ float EdgeFactor(float2 uv)
 {
     float2 t = gInvScreenSize;
     float3 nC = DecodeNormal(gNormal.Sample(gPointClamp, uv).xyz);
-    float4 pC = gWorldPos.Sample(gPointClamp, uv);
+    float dC = gDepth.Sample(gPointClamp, uv).r;
+    float3 pC = ReconstructWorld(uv, dC, gInvViewProj);
 
     float2 offs[4] =
     {
@@ -98,17 +100,20 @@ float EdgeFactor(float2 uv)
     };
 
     float e = 0.0f;
-    float dist = max(length(pC.xyz - gCameraWorld), 1.0f);
+    float dist = max(length(pC - gCameraWorld), 1.0f);
+    float geomC = step(dC, 0.99999f);
 
     [unroll]
     for (int i = 0; i < 4; ++i)
     {
         float3 nS = DecodeNormal(gNormal.Sample(gPointClamp, uv + offs[i]).xyz);
-        float4 pS = gWorldPos.Sample(gPointClamp, uv + offs[i]);
+        float dS = gDepth.Sample(gPointClamp, uv + offs[i]).r;
+        float3 pS = ReconstructWorld(uv + offs[i], dS, gInvViewProj);
+        float geomS = step(dS, 0.99999f);
         e = max(e, 1.0f - saturate(dot(nC, nS)));
-        e = max(e, abs(pC.a - pS.a));
-        float gap = length(pC.xyz - pS.xyz) / dist;
-        e = max(e, saturate(gap * 10.0f) * step(0.5f, pC.a) * step(0.5f, pS.a));
+        e = max(e, abs(geomC - geomS));
+        float gap = length(pC - pS) / dist;
+        e = max(e, saturate(gap * 10.0f) * geomC * geomS);
     }
 
     return saturate(e);
@@ -130,10 +135,11 @@ float4 PS(FSOut pin) : SV_Target
     float3 color = gScene.Sample(gLinearClamp, pin.TexC).rgb;
     float3 albedo = gAlbedo.Sample(gPointClamp, pin.TexC).rgb;
     float3 normalEnc = gNormal.Sample(gPointClamp, pin.TexC).xyz;
-    float4 worldS = gWorldPos.Sample(gPointClamp, pin.TexC);
+    float depth = gDepth.Sample(gPointClamp, pin.TexC).r;
+    float3 worldPos = ReconstructWorld(pin.TexC, depth, gInvViewProj);
 
     color = ApplyBloom(color, pin.TexC);
-    color = ApplyFog(color, worldS, albedo, normalEnc);
+    color = ApplyFog(color, depth, worldPos, albedo, normalEnc);
     color = ApplyEdges(color, pin.TexC);
 
     return float4(saturate(ToneMap(color)), 1.0f);

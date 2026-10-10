@@ -9,6 +9,7 @@
 #include <memory>
 
 class TextureManager;
+class ChandelierObject;
 
 class Scene
 {
@@ -34,14 +35,17 @@ public:
     void ToggleOctreeCulling();
     bool IsFrustumCullingEnabled() const { return mFrustumCulling; }
     bool IsOctreeCullingEnabled() const { return mOctreeCulling; }
+    const std::vector<ChandelierObject*>& GetChandeliers() const { return mChandeliers; }
 
 private:
     bool SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
+    bool SpawnChandeliers(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     void BuildOctree();
     bool ShouldDrawObject(GameObject* object, const DirectX::BoundingFrustum& frustum) const;
 
 private:
     std::vector<std::unique_ptr<GameObject>> mGameObjects;
+    std::vector<ChandelierObject*> mChandeliers;
     TextureManager* mTextureManager;
     Octree mOctree;
     bool mFrustumCulling = false;

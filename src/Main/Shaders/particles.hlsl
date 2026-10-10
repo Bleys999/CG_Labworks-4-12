@@ -36,7 +36,6 @@ struct GBufferOut
 {
     float4 Albedo : SV_Target0;
     float4 Normal : SV_Target1;
-    float4 WorldPos : SV_Target2;
 };
 
 VSOut VS(uint vid : SV_VertexID)
@@ -97,6 +96,5 @@ GBufferOut PS(GSOut pin)
     float3 n = normalize(pin.NormalW);
     o.Albedo = float4(pin.Color.rgb, gRoughness);
     o.Normal = float4(n * 0.5f + 0.5f, gMetallic);
-    o.WorldPos = float4(pin.PosW, gReceiveShadow > 0.5f ? 1.0f : 0.75f);
     return o;
 }

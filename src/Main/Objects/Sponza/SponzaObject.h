@@ -28,6 +28,17 @@ public:
     virtual bool UsesTessellation() const override { return true; }
     virtual void SetFrameCamera(const DirectX::XMFLOAT3& pos) override;
 
+    struct ExtractedChandelier
+    {
+        std::vector<ObjVertex> Vertices;
+        std::vector<uint16_t> Indices;
+        DirectX::XMFLOAT3 HangPivot = {};
+        DirectX::XMFLOAT3 LightLocal = {};
+        DirectX::BoundingBox LocalBounds = {};
+    };
+
+    const std::vector<ExtractedChandelier>& GetExtractedChandeliers() const { return mExtractedChandeliers; }
+
 private:
     struct MaterialDrawBatch
     {
@@ -59,4 +70,5 @@ private:
     std::shared_ptr<Texture> mFlatNormal;
     std::shared_ptr<Texture> mFlatHeight;
     std::unordered_map<std::string, std::shared_ptr<Texture>> mDisplacementCache;
+    std::vector<ExtractedChandelier> mExtractedChandeliers;
 };

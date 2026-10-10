@@ -1,6 +1,7 @@
 #include "Scene.h"
 #include "../../Main/Objects/Box/BoxObject.h"
 #include "../../Main/Objects/Sponza/SponzaObject.h"
+#include "../../Main/Objects/Chandelier/ChandelierObject.h"
 #include "../Assets/TextureManager.h"
 #include "../Core/Config.h"
 #include <algorithm>
@@ -29,8 +30,41 @@ bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
 
     if (!SpawnScatteredBoxes(device, cmdList, textureManager))
         return false;
+    if (!SpawnChandeliers(device, cmdList, textureManager))
+        return false;
 
     BuildOctree();
+    return true;
+}
+
+bool Scene::SpawnChandeliers(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)
+{
+    mChandeliers.clear();
+    GameObject* sponzaObj = GetObject("Sponza");
+    if (!sponzaObj)
+        return true;
+    auto* sponza = static_cast<SponzaObject*>(sponzaObj);
+
+    const auto& extracted = sponza->GetExtractedChandeliers();
+    const float amps[] = { 0.46f, 0.40f, 0.50f, 0.43f };
+    const float freqs[] = { 0.82f, 0.74f, 0.90f, 0.78f };
+    const float phases[] = { 0.0f, 1.4f, 2.2f, 3.5f };
+
+    for (size_t i = 0; i < extracted.size(); ++i)
+    {
+        auto lamp = std::make_unique<ChandelierObject>("Chandelier" + std::to_string(i));
+        lamp->SetPosition(extracted[i].HangPivot);
+        lamp->SetSwing(
+            amps[i % 4],
+            freqs[i % 4],
+            phases[i % 4] + (float)i * 0.35f);
+        if (!lamp->InitializeMesh(device, cmdList, textureManager,
+            extracted[i].Vertices, extracted[i].Indices,
+            extracted[i].LightLocal, extracted[i].LocalBounds))
+            return false;
+        mChandeliers.push_back(lamp.get());
+        AddObject(std::move(lamp));
+    }
     return true;
 }
 

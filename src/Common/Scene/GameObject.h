@@ -52,18 +52,17 @@ public:
 
     const DirectX::BoundingBox& GetWorldBounds() const { return mWorldBounds; }
 
-    void UpdateWorldBounds()
-    {
-        mLocalBounds.Transform(mWorldBounds, GetWorldMatrix());
-    }
-
-protected:
     DirectX::XMMATRIX GetWorldMatrix() const
     {
         DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(mPosition.x, mPosition.y, mPosition.z);
         DirectX::XMMATRIX rotation = DirectX::XMMatrixRotationRollPitchYaw(mRotation.x, mRotation.y, mRotation.z);
         DirectX::XMMATRIX scaling = DirectX::XMMatrixScaling(mScale.x, mScale.y, mScale.z);
         return scaling * rotation * translation;
+    }
+
+    void UpdateWorldBounds()
+    {
+        mLocalBounds.Transform(mWorldBounds, GetWorldMatrix());
     }
 
 protected:

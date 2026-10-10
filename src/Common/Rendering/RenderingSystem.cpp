@@ -111,12 +111,28 @@ void RenderingSystem::UpdateLightingConstants(const Camera& camera)
     XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraRight), camera.GetRight());
     XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.CameraUp), camera.GetUp());
     mLightingCpu.IblParams = XMFLOAT4(Config::IblIntensity, (float)mIbl.PrefilterMipCount(), (float)mNdfMode, 0.0f);
+    XMMATRIX invViewProj = XMMatrixInverse(nullptr, camera.GetView() * camera.GetProj());
+    XMStoreFloat4x4(&mLightingCpu.InvViewProj, XMMatrixTranspose(invViewProj));
     mLightingCB->CopyData(0, mLightingCpu);
 }
 
 void RenderingSystem::SetShadowDebugMode(UINT mode)
 {
     mLightingCpu.DebugMode = mode;
+}
+
+void RenderingSystem::SetSpotCount(UINT count)
+{
+    mLightingCpu.SpotCount = (std::min)(count, kMaxSpotLights);
+}
+
+void RenderingSystem::SetSpotLight(UINT index, const XMFLOAT4& posRange, const XMFLOAT4& dirCosine, const XMFLOAT4& colorIntensity)
+{
+    if (index >= kMaxSpotLights)
+        return;
+    mLightingCpu.SpotPosRange[index] = posRange;
+    mLightingCpu.SpotDirCosine[index] = dirCosine;
+    mLightingCpu.SpotColorIntensity[index] = colorIntensity;
 }
 
 void RenderingSystem::SetShadowCasterBounds(const BoundingBox& bounds)
@@ -219,17 +235,17 @@ void RenderingSystem::DrawDeferredLighting(
     cmdList->OMSetRenderTargets(1, &mSceneRtv, false, nullptr);
     cmdList->ClearRenderTargetView(mSceneRtv, black, 0, nullptr);
 
-    DrawFullscreenQuad(cmdList);
+    DrawFullscreenTriangle(cmdList);
 
     cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
         mSceneColor.Get(), mSceneState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
     mSceneState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 }
 
-void RenderingSystem::DrawFullscreenQuad(ID3D12GraphicsCommandList* cmdList) const
+void RenderingSystem::DrawFullscreenTriangle(ID3D12GraphicsCommandList* cmdList) const
 {
-    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    cmdList->DrawInstanced(4, 1, 0, 0);
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmdList->DrawInstanced(3, 1, 0, 0);
 }
 
 void RenderingSystem::DrawPostProcess(
@@ -254,6 +270,7 @@ void RenderingSystem::DrawPostProcess(
     pc.FogStrength = mFogEnabled ? Config::FogStrength : 0.0f;
     pc.PostEnable = 1.0f;
     pc.EdgeStrength = mEdgeEnabled ? Config::EdgeStrength : 0.0f;
+    pc.InvViewProj = mLightingCpu.InvViewProj;
     mPostCB->CopyData(0, pc);
 
     cmdList->SetGraphicsRootSignature(mPostRootSignature.Get());
@@ -272,7 +289,7 @@ void RenderingSystem::DrawPostProcess(
     cmdList->OMSetRenderTargets(1, &backBufferRtv, false, nullptr);
     cmdList->ClearRenderTargetView(backBufferRtv, black, 0, nullptr);
 
-    DrawFullscreenQuad(cmdList);
+    DrawFullscreenTriangle(cmdList);
 }
 
 void RenderingSystem::BuildGeometryPass(ID3D12Device* device)
@@ -346,7 +363,6 @@ void RenderingSystem::BuildGeometryPass(ID3D12Device* device)
     psoDesc.NumRenderTargets = GBuffer::ColorTargetCount;
     psoDesc.RTVFormats[0] = GBuffer::AlbedoFormat;
     psoDesc.RTVFormats[1] = GBuffer::NormalFormat;
-    psoDesc.RTVFormats[2] = GBuffer::WorldPosFormat;
     psoDesc.DSVFormat = GBuffer::DepthFormat;
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
@@ -430,7 +446,6 @@ void RenderingSystem::BuildTessellationPass(ID3D12Device* device)
     psoDesc.NumRenderTargets = GBuffer::ColorTargetCount;
     psoDesc.RTVFormats[0] = GBuffer::AlbedoFormat;
     psoDesc.RTVFormats[1] = GBuffer::NormalFormat;
-    psoDesc.RTVFormats[2] = GBuffer::WorldPosFormat;
     psoDesc.DSVFormat = GBuffer::DepthFormat;
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
@@ -526,8 +541,12 @@ void RenderingSystem::UpdateLightingSrvs(ID3D12Device* device)
     device->CreateShaderResourceView(mGBuffer.NormalResource(), &srv, cpu);
     cpu.Offset(1, inc);
 
-    srv.Format = GBuffer::WorldPosFormat;
-    device->CreateShaderResourceView(mGBuffer.WorldPosResource(), &srv, cpu);
+    D3D12_SHADER_RESOURCE_VIEW_DESC depthSrv = {};
+    depthSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    depthSrv.Format = GBuffer::DepthSrvFormat;
+    depthSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    depthSrv.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(mGBuffer.DepthResource(), &depthSrv, cpu);
     cpu.Offset(1, inc);
 
     D3D12_SHADER_RESOURCE_VIEW_DESC shadowSrv = {};
@@ -926,8 +945,12 @@ void RenderingSystem::UpdatePostSrvs(ID3D12Device* device)
     device->CreateShaderResourceView(mGBuffer.NormalResource(), &srv, cpu);
     cpu.Offset(1, inc);
 
-    srv.Format = GBuffer::WorldPosFormat;
-    device->CreateShaderResourceView(mGBuffer.WorldPosResource(), &srv, cpu);
+    D3D12_SHADER_RESOURCE_VIEW_DESC depthSrv = {};
+    depthSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    depthSrv.Format = GBuffer::DepthSrvFormat;
+    depthSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    depthSrv.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(mGBuffer.DepthResource(), &depthSrv, cpu);
 }
 
 void RenderingSystem::BuildPostPass(ID3D12Device* device)
