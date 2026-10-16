@@ -27,6 +27,7 @@ public:
     virtual void UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj) override;
     virtual bool UsesTessellation() const override { return true; }
     virtual void SetFrameCamera(const DirectX::XMFLOAT3& pos) override;
+    UINT GetBakedTriangleCount() const { return mBakedTriangleCount; }
 
     struct ExtractedChandelier
     {
@@ -40,13 +41,24 @@ public:
     const std::vector<ExtractedChandelier>& GetExtractedChandeliers() const { return mExtractedChandeliers; }
 
 private:
+    struct HeightMapCpu
+    {
+        UINT Width = 0;
+        UINT Height = 0;
+        std::vector<uint8_t> Lum;
+        float Sample(float u, float v) const;
+    };
+
     struct MaterialDrawBatch
     {
         UINT StartIndexLocation = 0;
         UINT IndexCount = 0;
+        UINT BakedStartIndexLocation = 0;
+        UINT BakedIndexCount = 0;
         std::shared_ptr<Texture> DiffuseTexture;
         std::shared_ptr<Texture> NormalTexture;
         std::shared_ptr<Texture> DisplacementTexture;
+        std::shared_ptr<HeightMapCpu> HeightCpu;
         Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> SrvHeap;
         DirectX::XMFLOAT4 DiffuseFactor = { 1.0f, 1.0f, 1.0f, 1.0f };
         float Metallic = 0.0f;
@@ -56,6 +68,13 @@ private:
     bool LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     bool BuildBatchHeap(ID3D12Device* device, MaterialDrawBatch& batch);
     std::shared_ptr<Texture> LoadDisplacement(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, const std::string& albedoPath);
+    std::shared_ptr<HeightMapCpu> HeightCpuFor(const std::string& albedoPath) const;
+    bool BakeTessellation(
+        ID3D12Device* device,
+        ID3D12GraphicsCommandList* cmdList,
+        const std::vector<TessVertex>& srcVertices,
+        const std::vector<uint32_t>& srcIndices,
+        UINT factor);
 
 private:
     std::unique_ptr<MeshGeometry> mGeometry = nullptr;
@@ -70,5 +89,10 @@ private:
     std::shared_ptr<Texture> mFlatNormal;
     std::shared_ptr<Texture> mFlatHeight;
     std::unordered_map<std::string, std::shared_ptr<Texture>> mDisplacementCache;
+    std::unordered_map<std::string, std::shared_ptr<HeightMapCpu>> mHeightCpuCache;
+    std::shared_ptr<HeightMapCpu> mFlatHeightCpu;
     std::vector<ExtractedChandelier> mExtractedChandeliers;
+    std::unique_ptr<MeshGeometry> mBakedGeometry = nullptr;
+    bool mBaked = false;
+    UINT mBakedTriangleCount = 0;
 };

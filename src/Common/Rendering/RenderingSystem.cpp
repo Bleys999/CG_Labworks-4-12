@@ -43,6 +43,7 @@ namespace
 bool RenderingSystem::Initialize(ID3D12Device* device)
 {
     mDevice = device;
+    mTessBaked = Config::TessellationBaked;
     mLightingCB = std::make_unique<UploadBuffer<DeferredLightingConstants>>(device, 1, true);
     mShadowPassCB = std::make_unique<UploadBuffer<ShadowPassConstants>>(device, Config::ShadowCascadeCount, true);
     mPostCB = std::make_unique<UploadBuffer<PostProcessConstants>>(device, 1, true);
@@ -150,7 +151,7 @@ void RenderingSystem::ApplyGeometryPass(ID3D12GraphicsCommandList* cmdList) cons
 void RenderingSystem::ApplyTessellationPass(ID3D12GraphicsCommandList* cmdList) const
 {
     cmdList->SetGraphicsRootSignature(mTessellationRootSignature.Get());
-    cmdList->SetPipelineState(mTessellationPSO.Get());
+    cmdList->SetPipelineState(mTessBaked ? mTessBakedPSO.Get() : mTessellationPSO.Get());
 }
 
 void RenderingSystem::ApplyShadowPass(ID3D12GraphicsCommandList* cmdList) const
@@ -391,6 +392,7 @@ void RenderingSystem::BuildTessellationPass(ID3D12Device* device)
     Compile("HS", "hs_5_0", mTessHs);
     Compile("DS", "ds_5_0", mTessDs);
     Compile("PS", "ps_5_0", mTessPs);
+    Compile("VSBaked", "vs_5_0", mTessBakedVs);
 
     CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
 
@@ -451,6 +453,12 @@ void RenderingSystem::BuildTessellationPass(ID3D12Device* device)
     psoDesc.SampleDesc.Quality = 0;
 
     ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mTessellationPSO)));
+
+    psoDesc.VS = { reinterpret_cast<BYTE*>(mTessBakedVs->GetBufferPointer()), mTessBakedVs->GetBufferSize() };
+    psoDesc.HS = { nullptr, 0 };
+    psoDesc.DS = { nullptr, 0 };
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mTessBakedPSO)));
 }
 
 void RenderingSystem::CreateShadowMaps(ID3D12Device* device)

@@ -72,6 +72,7 @@ public:
 
     void ApplyTessellationPass(ID3D12GraphicsCommandList* cmdList) const;
     ID3D12PipelineState* GetTessellationPSO() const { return mTessellationPSO.Get(); }
+    bool IsTessBaked() const { return mTessBaked; }
 
     void ApplyShadowPass(ID3D12GraphicsCommandList* cmdList) const;
     void SetShadowCascadeTarget(ID3D12GraphicsCommandList* cmdList, UINT cascadeIndex) const;
@@ -134,6 +135,9 @@ private:
     Microsoft::WRL::ComPtr<ID3DBlob> mTessHs;
     Microsoft::WRL::ComPtr<ID3DBlob> mTessDs;
     Microsoft::WRL::ComPtr<ID3DBlob> mTessPs;
+    Microsoft::WRL::ComPtr<ID3DBlob> mTessBakedVs;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> mTessBakedPSO;
+    bool mTessBaked = false;
     std::vector<D3D12_INPUT_ELEMENT_DESC> mTessellationInputLayout;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> mLightingRootSignature;

@@ -26,6 +26,8 @@ struct Config
     static constexpr float TessNear = 5.0f;
     static constexpr float TessFar = 40.0f;
     static constexpr float DisplacementScale = 0.06f;
+    static constexpr bool TessellationBaked = true;
+    static constexpr UINT BakeTessFactor = 3;
 
     static constexpr int ShadowCascadeCount = 4;
     static constexpr UINT ShadowMapSize = 2048;

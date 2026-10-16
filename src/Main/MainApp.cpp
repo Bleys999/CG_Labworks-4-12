@@ -255,6 +255,7 @@ void MainApp::RefreshWindowCaption()
         L"  F4 octree:" + octree +
         L"  F5/F6/F7  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
         L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +
+        L"  tess:" + std::wstring(mRendering.IsTessBaked() ? L"BAKED" : L"LIVE") +
         L"  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +
         L"/" + std::to_wstring(mScene.GetObjectCount()) +
         L"  boxes:" + std::to_wstring(mScene.GetCullableCount());
