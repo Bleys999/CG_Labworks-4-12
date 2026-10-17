@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cfloat>
 #include <algorithm>
+#include <new>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
@@ -826,9 +827,14 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
 
     if (Config::TessellationBaked)
     {
-        if (!BakeTessellation(device, cmdList, vertices, indices, Config::BakeTessFactor))
-            return false;
-        mBaked = true;
+        try
+        {
+            mBaked = BakeTessellation(device, cmdList, vertices, indices, Config::BakeTessFactor);
+        }
+        catch (const std::bad_alloc&)
+        {
+            mBaked = false;
+        }
     }
 
     return true;

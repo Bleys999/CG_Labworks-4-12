@@ -1,5 +1,6 @@
 #include "BoxObject.h"
 #include "../../../Common/Assets/GeometryGenerator.h"
+#include "../../../Common/Core/Config.h"
 #include <cmath>
 
 using namespace DirectX;
@@ -70,12 +71,33 @@ void BoxObject::Update(const GameTimer& gt)
 {
 }
 
-void BoxObject::UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj)
+void BoxObject::SetFrameCamera(const XMFLOAT3& pos)
 {
-    if (!mVisible || !mObjectCB) return;
+    mCameraPos = pos;
+}
 
-    XMMATRIX world = GetWorldMatrix();
-    XMMATRIX worldViewProj = world * view * proj;
+XMMATRIX BoxObject::BillboardWorld() const
+{
+    const XMFLOAT3 right(mView._11, mView._21, mView._31);
+    const XMFLOAT3 up(mView._12, mView._22, mView._32);
+    const XMFLOAT3 look(mView._13, mView._23, mView._33);
+
+    const XMMATRIX scale = XMMatrixScaling(mScale.x, mScale.y, mScale.z);
+    const XMMATRIX facing = XMMatrixSet(
+        right.x, right.y, right.z, 0.0f,
+        up.x, up.y, up.z, 0.0f,
+        -look.x, -look.y, -look.z, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f);
+    const XMMATRIX translation = XMMatrixTranslation(mPosition.x, mPosition.y, mPosition.z);
+    return scale * facing * translation;
+}
+
+void BoxObject::WriteObjectConstants(bool billboard)
+{
+    const XMMATRIX view = XMLoadFloat4x4(&mView);
+    const XMMATRIX proj = XMLoadFloat4x4(&mProj);
+    const XMMATRIX world = billboard ? BillboardWorld() : GetWorldMatrix();
+    const XMMATRIX worldViewProj = world * view * proj;
 
     ObjectConstants objConstants{};
     XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(worldViewProj));
@@ -86,13 +108,30 @@ void BoxObject::UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX
     objConstants.ReceiveShadow = 1.0f;
     objConstants.Metallic = mMetallic;
     objConstants.Roughness = mRoughness;
-
     mObjectCB->CopyData(0, objConstants);
+}
+
+void BoxObject::UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj)
+{
+    if (!mVisible || !mObjectCB) return;
+
+    XMStoreFloat4x4(&mView, view);
+    XMStoreFloat4x4(&mProj, proj);
+
+    const XMVECTOR camera = XMLoadFloat3(&mCameraPos);
+    const XMVECTOR position = XMLoadFloat3(&mPosition);
+    const float distance = XMVectorGetX(XMVector3Length(XMVectorSubtract(camera, position)));
+    mBillboardLod = distance > Config::BillboardLodDistance;
+
+    WriteObjectConstants(false);
 }
 
 void BoxObject::Draw(ID3D12GraphicsCommandList* cmdList)
 {
     if (!mGeometry || !mVisible || !mObjectCB) return;
+
+    if (mBillboardLod)
+        WriteObjectConstants(true);
 
     cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
 
@@ -103,16 +142,21 @@ void BoxObject::Draw(ID3D12GraphicsCommandList* cmdList)
         cmdList->SetGraphicsRootDescriptorTable(1, mTexture->GetSRV());
     }
 
+    const SubmeshGeometry& submesh = mBillboardLod
+        ? mGeometry->DrawArgs["billboard"]
+        : mGeometry->DrawArgs["box"];
+
     cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
     cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    cmdList->DrawIndexedInstanced(mGeometry->DrawArgs["box"].IndexCount, 1, 0, 0, 0);
+    cmdList->DrawIndexedInstanced(submesh.IndexCount, 1, submesh.StartIndexLocation, 0, 0);
 }
 
 void BoxObject::DrawShadow(ID3D12GraphicsCommandList* cmdList)
 {
     if (!mGeometry || !mVisible || !mObjectCB) return;
+
+    WriteObjectConstants(false);
 
     cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
     cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
@@ -137,7 +181,22 @@ bool BoxObject::CreateSharedGeometry(ID3D12Device* device, ID3D12GraphicsCommand
         vertices[i].TexC = box.Vertices[i].TexC;
     }
 
-    const std::vector<std::uint16_t>& indices = box.GetIndices16();
+    const std::vector<std::uint16_t>& boxIndices = box.GetIndices16();
+    std::vector<std::uint16_t> indices(boxIndices.begin(), boxIndices.end());
+
+    const UINT billboardStart = (UINT)indices.size();
+    const uint16_t base = (uint16_t)vertices.size();
+    const ObjVertex quad[4] =
+    {
+        { XMFLOAT3(-1.0f, -1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0.0f, 1.0f) },
+        { XMFLOAT3(+1.0f, -1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1.0f, 1.0f) },
+        { XMFLOAT3(+1.0f, +1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, +1.0f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f), XMFLOAT2(0.0f, 0.0f) }
+    };
+    vertices.insert(vertices.end(), quad, quad + 4);
+    const uint16_t quadIdx[] = { 0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2 };
+    for (uint16_t i : quadIdx)
+        indices.push_back((uint16_t)(base + i));
 
     sSharedGeometry = std::make_shared<MeshGeometry>();
     sSharedGeometry->Name = "boxGeo";
@@ -163,13 +222,19 @@ bool BoxObject::CreateSharedGeometry(ID3D12Device* device, ID3D12GraphicsCommand
     sSharedGeometry->IndexBufferByteSize = ibByteSize;
 
     SubmeshGeometry submesh;
-    submesh.IndexCount = (UINT)indices.size();
+    submesh.IndexCount = billboardStart;
     submesh.StartIndexLocation = 0;
     submesh.BaseVertexLocation = 0;
     submesh.Bounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
     submesh.Bounds.Extents = XMFLOAT3(1.0f, 1.0f, 1.0f);
 
     sSharedGeometry->DrawArgs["box"] = submesh;
+
+    SubmeshGeometry billboard;
+    billboard.IndexCount = (UINT)indices.size() - billboardStart;
+    billboard.StartIndexLocation = billboardStart;
+    billboard.BaseVertexLocation = 0;
+    sSharedGeometry->DrawArgs["billboard"] = billboard;
 
     return true;
 }

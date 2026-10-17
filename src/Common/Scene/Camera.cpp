@@ -278,6 +278,8 @@ void Camera::HandleInput(const GameTimer& gt, const Input& input)
 {
     float dt = gt.DeltaTime();
     float speed = mMoveSpeed * dt;
+    if (input.IsKeyDown(VK_SHIFT))
+        speed *= 4.0f;
 
     if (input.IsKeyDown('W') || input.IsKeyDown('w')) Walk(speed);
     if (input.IsKeyDown('S') || input.IsKeyDown('s')) Walk(-speed);

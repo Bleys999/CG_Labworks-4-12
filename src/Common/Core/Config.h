@@ -27,7 +27,8 @@ struct Config
     static constexpr float TessFar = 40.0f;
     static constexpr float DisplacementScale = 0.06f;
     static constexpr bool TessellationBaked = true;
-    static constexpr UINT BakeTessFactor = 3;
+    static constexpr UINT BakeTessFactor = 1;
+    static constexpr float BillboardLodDistance = 18.0f;
 
     static constexpr int ShadowCascadeCount = 4;
     static constexpr UINT ShadowMapSize = 2048;

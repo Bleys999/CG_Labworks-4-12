@@ -4,6 +4,7 @@
 #include "../Common/Rendering/RenderingSystem.h"
 #include "../Common/Rendering/ParticleSystem.h"
 #include "Objects/Chandelier/ChandelierObject.h"
+#include "Objects/Sponza/SponzaObject.h"
 #include "../Common/Core/Input.h"
 #include "../Common/Assets/TextureManager.h"
 #include "../Common/Core/Config.h"
@@ -64,7 +65,12 @@ bool MainApp::Initialize()
     if (!mParticles.Initialize(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mScene.Initialize(md3dDevice.Get(), mCommandList.Get(), &mTextureManager)) return false;
     if (GameObject* sponza = mScene.GetObject("Sponza"))
+    {
         mRendering.SetShadowCasterBounds(sponza->GetWorldBounds());
+        auto* sponzaObject = static_cast<SponzaObject*>(sponza);
+        if (Config::TessellationBaked && sponzaObject->GetBakedTriangleCount() == 0)
+            mRendering.SetTessBaked(false);
+    }
 
     ThrowIfFailed(mCommandList->Close());
     ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
@@ -256,6 +262,7 @@ void MainApp::RefreshWindowCaption()
         L"  F5/F6/F7  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
         L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +
         L"  tess:" + std::wstring(mRendering.IsTessBaked() ? L"BAKED" : L"LIVE") +
+        L"  lod1>" + std::to_wstring((int)Config::BillboardLodDistance) +
         L"  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +
         L"/" + std::to_wstring(mScene.GetObjectCount()) +
         L"  boxes:" + std::to_wstring(mScene.GetCullableCount());

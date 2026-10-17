@@ -21,6 +21,7 @@ public:
     virtual void Draw(ID3D12GraphicsCommandList* cmdList) override;
     virtual void DrawShadow(ID3D12GraphicsCommandList* cmdList) override;
     virtual void UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX proj) override;
+    virtual void SetFrameCamera(const DirectX::XMFLOAT3& pos) override;
 
     void SetDiffuseFactor(const DirectX::XMFLOAT4& color) { mDiffuseFactor = color; }
     void SetMetallic(float metallic) { mMetallic = metallic; }
@@ -28,6 +29,8 @@ public:
 
 private:
     bool CreateSharedGeometry(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
+    void WriteObjectConstants(bool billboard);
+    DirectX::XMMATRIX BillboardWorld() const;
 
 private:
     std::shared_ptr<MeshGeometry> mGeometry;
@@ -36,6 +39,10 @@ private:
     DirectX::XMFLOAT4 mDiffuseFactor = { 1.0f, 1.0f, 1.0f, 1.0f };
     float mMetallic = 0.0f;
     float mRoughness = 0.55f;
+    DirectX::XMFLOAT3 mCameraPos = { 0.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT4X4 mView = MathHelper::Identity4x4();
+    DirectX::XMFLOAT4X4 mProj = MathHelper::Identity4x4();
+    bool mBillboardLod = false;
 
     static std::shared_ptr<MeshGeometry> sSharedGeometry;
     static const std::array<Vertex, 8> sVertices;

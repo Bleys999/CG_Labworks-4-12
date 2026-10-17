@@ -164,17 +164,6 @@ float3 DirectLambert(float3 albedo, float3 N, float3 L, float3 radiance)
     return albedo * radiance * saturate(dot(N, L));
 }
 
-float3 ViewRay(float2 uv)
-{
-    float2 ndc = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
-    float aspect = gCameraWorld.w;
-    float tanHalf = gCameraLook.w;
-    float3 look = normalize(gCameraLook.xyz);
-    float3 right = normalize(gCameraRight.xyz);
-    float3 up = normalize(gCameraUp.xyz);
-    return normalize(look + ndc.x * aspect * tanHalf * right + ndc.y * tanHalf * up);
-}
-
 float4 PS(FSOut pin) : SV_Target
 {
     int2 pixel = int2(pin.PosH.xy);
@@ -183,11 +172,7 @@ float4 PS(FSOut pin) : SV_Target
     float maxMip = max(gIblParams.y - 1.0f, 0.0f);
 
     if (depth >= 1.0f)
-    {
-        float3 rd = ViewRay(pin.TexC);
-        float3 sky = gPrefilter.SampleLevel(gIblSampler, rd, 0.0f).rgb * iblScale;
-        return float4(sky, 1.0f);
-    }
+        return float4(0.48f, 0.52f, 0.80f, 1.0f);
 
     float4 albedoS = gAlbedo.Load(int3(pixel, 0));
     float4 normalS = gNormal.Load(int3(pixel, 0));

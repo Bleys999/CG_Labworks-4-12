@@ -72,6 +72,7 @@ public:
 
     void ApplyTessellationPass(ID3D12GraphicsCommandList* cmdList) const;
     ID3D12PipelineState* GetTessellationPSO() const { return mTessellationPSO.Get(); }
+    void SetTessBaked(bool baked) { mTessBaked = baked; }
     bool IsTessBaked() const { return mTessBaked; }
 
     void ApplyShadowPass(ID3D12GraphicsCommandList* cmdList) const;
