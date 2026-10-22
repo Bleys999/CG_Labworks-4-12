@@ -1,4 +1,6 @@
 #include "SponzaObject.h"
+#include "../../../Common/Core/d3dApp.h"
+#include "../../../Common/Rendering/RenderingSystem.h"
 #include <cstring>
 #include <string>
 #include <vector>
@@ -110,15 +112,10 @@ bool SponzaObject::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* c
     mFlatHeight = std::make_shared<Texture>();
     if (!mFlatHeight->Create1x1RGBA8(device, cmdList, 128, 128, 128, 255))
         return false;
-    mFlatHeightCpu = std::make_shared<HeightMapCpu>();
-    mFlatHeightCpu->Width = 1;
-    mFlatHeightCpu->Height = 1;
-    mFlatHeightCpu->Lum.assign(1, 128);
-
-    if (!LoadModel(device, cmdList))
-        return false;
 
     mObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(device, 1, true);
+    if (!LoadModel(device, cmdList))
+        return false;
     return true;
 }
 
@@ -145,21 +142,16 @@ void SponzaObject::Draw(ID3D12GraphicsCommandList* cmdList)
 {
     if (!mGeometry || !mVisible || !mObjectCB) return;
 
-    const bool baked = mBaked && mBakedGeometry != nullptr;
-    const MeshGeometry* geo = baked ? mBakedGeometry.get() : mGeometry.get();
+    const bool baked = mBaked && !mBakedChunks.empty();
 
-    cmdList->IASetVertexBuffers(0, 1, &geo->VertexBufferView());
-    cmdList->IASetIndexBuffer(&geo->IndexBufferView());
     cmdList->IASetPrimitiveTopology(baked
         ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
         : D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
 
-    for (const auto& batch : mMaterialBatches)
+    auto bindBatch = [&](const MaterialDrawBatch& batch) -> bool
     {
-        const UINT indexCount = baked ? batch.BakedIndexCount : batch.IndexCount;
-        const UINT startIndex = baked ? batch.BakedStartIndexLocation : batch.StartIndexLocation;
-        if (indexCount == 0 || !batch.SrvHeap)
-            continue;
+        if (!batch.SrvHeap)
+            return false;
 
         ObjectConstants oc{};
         oc.WorldViewProj = mWorldViewProj;
@@ -183,8 +175,28 @@ void SponzaObject::Draw(ID3D12GraphicsCommandList* cmdList)
         ID3D12DescriptorHeap* heap = batch.SrvHeap.Get();
         cmdList->SetDescriptorHeaps(1, &heap);
         cmdList->SetGraphicsRootDescriptorTable(1, batch.SrvHeap->GetGPUDescriptorHandleForHeapStart());
+        return true;
+    };
 
-        cmdList->DrawIndexedInstanced(indexCount, 1, startIndex, 0, 0);
+    if (!baked)
+    {
+        cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
+        cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
+        for (const auto& batch : mMaterialBatches)
+        {
+            if (batch.IndexCount == 0 || !bindBatch(batch))
+                continue;
+            cmdList->DrawIndexedInstanced(batch.IndexCount, 1, batch.StartIndexLocation, 0, 0);
+        }
+        return;
+    }
+
+    for (const BakedChunk& chunk : mBakedChunks)
+    {
+        if (chunk.VertexCount == 0 || chunk.Batch >= mMaterialBatches.size() || !bindBatch(mMaterialBatches[chunk.Batch]))
+            continue;
+        cmdList->IASetVertexBuffers(0, 1, &chunk.View);
+        cmdList->DrawInstanced(chunk.VertexCount, 1, 0, 0);
     }
 }
 
@@ -192,8 +204,7 @@ void SponzaObject::DrawShadow(ID3D12GraphicsCommandList* cmdList)
 {
     if (!mGeometry || !mVisible || !mObjectCB) return;
 
-    const bool baked = mBaked && mBakedGeometry != nullptr;
-    MeshGeometry* geo = baked ? mBakedGeometry.get() : mGeometry.get();
+    const bool baked = mBaked && !mBakedChunks.empty();
 
     ObjectConstants oc{};
     oc.WorldViewProj = mWorldViewProj;
@@ -201,178 +212,148 @@ void SponzaObject::DrawShadow(ID3D12GraphicsCommandList* cmdList)
     mObjectCB->CopyData(0, oc);
 
     cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
-    cmdList->IASetVertexBuffers(0, 1, &geo->VertexBufferView());
-    cmdList->IASetIndexBuffer(&geo->IndexBufferView());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmdList->DrawIndexedInstanced(geo->DrawArgs["sponza"].IndexCount, 1, 0, 0, 0);
-}
-
-float SponzaObject::HeightMapCpu::Sample(float u, float v) const
-{
-    if (Width == 0 || Height == 0 || Lum.empty())
-        return 0.5f;
-
-    u -= floorf(u);
-    v -= floorf(v);
-    const float fx = u * (float)Width - 0.5f;
-    const float fy = v * (float)Height - 0.5f;
-    const int x0 = (int)floorf(fx);
-    const int y0 = (int)floorf(fy);
-    const float tx = fx - (float)x0;
-    const float ty = fy - (float)y0;
-
-    auto at = [&](int x, int y) -> float
+    if (!baked)
     {
-        const int w = (int)Width;
-        const int h = (int)Height;
-        x = ((x % w) + w) % w;
-        y = ((y % h) + h) % h;
-        return (float)Lum[(size_t)y * Width + (size_t)x] / 255.0f;
-    };
-
-    const float h00 = at(x0, y0);
-    const float h10 = at(x0 + 1, y0);
-    const float h01 = at(x0, y0 + 1);
-    const float h11 = at(x0 + 1, y0 + 1);
-    const float top = h00 + (h10 - h00) * tx;
-    const float bottom = h01 + (h11 - h01) * tx;
-    return top + (bottom - top) * ty;
-}
-
-std::shared_ptr<SponzaObject::HeightMapCpu> SponzaObject::HeightCpuFor(const std::string& albedoPath) const
-{
-    auto found = mHeightCpuCache.find(albedoPath);
-    if (found != mHeightCpuCache.end())
-        return found->second;
-    return mFlatHeightCpu;
-}
-
-bool SponzaObject::BakeTessellation(
-    ID3D12Device* device,
-    ID3D12GraphicsCommandList* cmdList,
-    const std::vector<TessVertex>& srcVertices,
-    const std::vector<uint32_t>& srcIndices,
-    UINT factor)
-{
-    const UINT n = (std::max)(1u, factor);
-    const UINT vertsPerTri = (n + 1) * (n + 2) / 2;
-    const UINT trisPerTri = n * n;
-    const size_t srcTriCount = srcIndices.size() / 3;
-    if (srcTriCount == 0)
-        return false;
-
-    std::vector<TessVertex> vertices;
-    std::vector<uint32_t> indices;
-    vertices.reserve(srcTriCount * vertsPerTri);
-    indices.reserve(srcTriCount * trisPerTri * 3);
-
-    const float scale = Config::DisplacementScale;
-    const float invN = 1.0f / (float)n;
-
-    auto vertexOffset = [n](UINT a, UINT b) -> UINT
-    {
-        return a * (n + 1) - (a * (a > 0 ? a - 1 : 0)) / 2 + b;
-    };
-
-    for (auto& batch : mMaterialBatches)
-    {
-        batch.BakedStartIndexLocation = (UINT)indices.size();
-        const HeightMapCpu* height = batch.HeightCpu ? batch.HeightCpu.get() : mFlatHeightCpu.get();
-        const UINT firstTri = batch.StartIndexLocation / 3;
-        const UINT endTri = (batch.StartIndexLocation + batch.IndexCount) / 3;
-
-        for (UINT t = firstTri; t < endTri; ++t)
-        {
-            const TessVertex& v0 = srcVertices[srcIndices[t * 3 + 0]];
-            const TessVertex& v1 = srcVertices[srcIndices[t * 3 + 1]];
-            const TessVertex& v2 = srcVertices[srcIndices[t * 3 + 2]];
-
-            const XMVECTOR p0 = XMLoadFloat3(&v0.Pos);
-            const XMVECTOR p1 = XMLoadFloat3(&v1.Pos);
-            const XMVECTOR p2 = XMLoadFloat3(&v2.Pos);
-            const XMVECTOR n0 = XMLoadFloat3(&v0.Normal);
-            const XMVECTOR n1 = XMLoadFloat3(&v1.Normal);
-            const XMVECTOR n2 = XMLoadFloat3(&v2.Normal);
-            const XMVECTOR t0 = XMLoadFloat3(&v0.Tangent);
-            const XMVECTOR t1 = XMLoadFloat3(&v1.Tangent);
-            const XMVECTOR t2 = XMLoadFloat3(&v2.Tangent);
-
-            const uint32_t base = (uint32_t)vertices.size();
-
-            for (UINT a = 0; a <= n; ++a)
-            {
-                for (UINT b = 0; a + b <= n; ++b)
-                {
-                    const float w1 = (float)a * invN;
-                    const float w2 = (float)b * invN;
-                    const float w0 = 1.0f - w1 - w2;
-
-                    XMVECTOR pos = XMVectorAdd(XMVectorAdd(XMVectorScale(p0, w0), XMVectorScale(p1, w1)), XMVectorScale(p2, w2));
-                    XMVECTOR nrm = XMVector3Normalize(XMVectorAdd(XMVectorAdd(XMVectorScale(n0, w0), XMVectorScale(n1, w1)), XMVectorScale(n2, w2)));
-                    XMVECTOR tan = XMVectorAdd(XMVectorAdd(XMVectorScale(t0, w0), XMVectorScale(t1, w1)), XMVectorScale(t2, w2));
-
-                    const float u = v0.TexC.x * w0 + v1.TexC.x * w1 + v2.TexC.x * w2;
-                    const float v = v0.TexC.y * w0 + v1.TexC.y * w1 + v2.TexC.y * w2;
-                    const float h = height->Sample(u * mUVScale.x + mUVOffset.x, v * mUVScale.y + mUVOffset.y);
-                    pos = XMVectorAdd(pos, XMVectorScale(nrm, h * scale));
-
-                    TessVertex out;
-                    XMStoreFloat3(&out.Pos, pos);
-                    XMStoreFloat3(&out.Normal, nrm);
-                    XMStoreFloat3(&out.Tangent, tan);
-                    out.TexC = XMFLOAT2(u, v);
-                    vertices.push_back(out);
-                }
-            }
-
-            for (UINT a = 0; a < n; ++a)
-            {
-                for (UINT b = 0; a + b < n; ++b)
-                {
-                    indices.push_back(base + vertexOffset(a, b));
-                    indices.push_back(base + vertexOffset(a + 1, b));
-                    indices.push_back(base + vertexOffset(a, b + 1));
-                    if (a + b + 1 < n)
-                    {
-                        indices.push_back(base + vertexOffset(a + 1, b));
-                        indices.push_back(base + vertexOffset(a + 1, b + 1));
-                        indices.push_back(base + vertexOffset(a, b + 1));
-                    }
-                }
-            }
-        }
-
-        batch.BakedIndexCount = (UINT)indices.size() - batch.BakedStartIndexLocation;
+        cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
+        cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
+        cmdList->DrawIndexedInstanced(mGeometry->DrawArgs["sponza"].IndexCount, 1, 0, 0, 0);
+        return;
     }
 
-    if (vertices.empty() || indices.empty())
+    for (const BakedChunk& chunk : mBakedChunks)
+    {
+        if (chunk.VertexCount == 0)
+            continue;
+        cmdList->IASetVertexBuffers(0, 1, &chunk.View);
+        cmdList->DrawInstanced(chunk.VertexCount, 1, 0, 0);
+    }
+}
+
+bool SponzaObject::CaptureTessellation(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
+{
+    if (!mGeometry || !mObjectCB || !mRendering || mMaterialBatches.empty())
         return false;
 
-    const UINT vbByteSize = (UINT)vertices.size() * sizeof(TessVertex);
-    const UINT ibByteSize = (UINT)indices.size() * sizeof(uint32_t);
+    const UINT factor = (std::max)(1u, Config::BakeTessFactor);
+    const UINT vertsPerSrc = factor * factor * 3;
+    const UINT srcTrisPerChunk = 8192;
+    const UINT stride = sizeof(TessVertex);
 
-    mBakedGeometry = std::make_unique<MeshGeometry>();
-    mBakedGeometry->Name = "sponzaBaked";
+    mBakedChunks.clear();
+    mBakedTriangleCount = 0;
 
-    mBakedGeometry->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(device,
-        cmdList, vertices.data(), vbByteSize, mBakedGeometry->VertexBufferUploader);
-    mBakedGeometry->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(device,
-        cmdList, indices.data(), ibByteSize, mBakedGeometry->IndexBufferUploader);
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
+    cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
+    cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
 
-    mBakedGeometry->VertexByteStride = sizeof(TessVertex);
-    mBakedGeometry->VertexBufferByteSize = vbByteSize;
-    mBakedGeometry->IndexFormat = DXGI_FORMAT_R32_UINT;
-    mBakedGeometry->IndexBufferByteSize = ibByteSize;
+    auto abandon = [&]() -> bool
+    {
+        cmdList->SOSetTargets(0, 0, nullptr);
+        D3DApp::GetApp()->DiscardPendingCommandList();
+        mBakedChunks.clear();
+        mBakedTriangleCount = 0;
+        return false;
+    };
 
-    SubmeshGeometry submesh;
-    submesh.IndexCount = (UINT)indices.size();
-    submesh.StartIndexLocation = 0;
-    submesh.BaseVertexLocation = 0;
-    mBakedGeometry->DrawArgs["sponza"] = submesh;
+    for (UINT batchIndex = 0; batchIndex < (UINT)mMaterialBatches.size(); ++batchIndex)
+    {
+        const MaterialDrawBatch& batch = mMaterialBatches[batchIndex];
+        if (batch.IndexCount < 3 || !batch.SrvHeap)
+            continue;
 
-    mBakedTriangleCount = (UINT)(indices.size() / 3);
-    return true;
+        const UINT srcTris = batch.IndexCount / 3;
+        UINT done = 0;
+        while (done < srcTris)
+        {
+            const UINT n = (std::min)(srcTrisPerChunk, srcTris - done);
+            const UINT vertexCount = n * vertsPerSrc;
+            const UINT64 byteSize = (UINT64)vertexCount * stride;
+
+            BakedChunk chunk;
+            chunk.Batch = batchIndex;
+            chunk.VertexCount = vertexCount;
+            HRESULT hr = device->CreateCommittedResource(
+                &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+                D3D12_HEAP_FLAG_NONE,
+                &CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+                D3D12_RESOURCE_STATE_STREAM_OUT,
+                nullptr,
+                IID_PPV_ARGS(chunk.Buffer.GetAddressOf()));
+            if (FAILED(hr))
+                return abandon();
+
+            const UINT64 counterBytes = sizeof(UINT64);
+            hr = device->CreateCommittedResource(
+                &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+                D3D12_HEAP_FLAG_NONE,
+                &CD3DX12_RESOURCE_DESC::Buffer(counterBytes),
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                nullptr,
+                IID_PPV_ARGS(chunk.FilledSize.GetAddressOf()));
+            if (FAILED(hr))
+                return abandon();
+            hr = device->CreateCommittedResource(
+                &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+                D3D12_HEAP_FLAG_NONE,
+                &CD3DX12_RESOURCE_DESC::Buffer(counterBytes),
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                nullptr,
+                IID_PPV_ARGS(chunk.FilledSizeUpload.GetAddressOf()));
+            if (FAILED(hr))
+                return abandon();
+
+            void* mapped = nullptr;
+            if (FAILED(chunk.FilledSizeUpload->Map(0, nullptr, &mapped)))
+                return abandon();
+            memset(mapped, 0, (size_t)counterBytes);
+            chunk.FilledSizeUpload->Unmap(0, nullptr);
+            cmdList->CopyBufferRegion(chunk.FilledSize.Get(), 0, chunk.FilledSizeUpload.Get(), 0, counterBytes);
+            auto toStream = CD3DX12_RESOURCE_BARRIER::Transition(
+                chunk.FilledSize.Get(),
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_STREAM_OUT);
+            cmdList->ResourceBarrier(1, &toStream);
+
+            D3D12_STREAM_OUTPUT_BUFFER_VIEW soView = {};
+            soView.BufferLocation = chunk.Buffer->GetGPUVirtualAddress();
+            soView.SizeInBytes = byteSize;
+            soView.BufferFilledSizeLocation = chunk.FilledSize->GetGPUVirtualAddress();
+            cmdList->SOSetTargets(0, 1, &soView);
+
+            ObjectConstants oc{};
+            oc.DiffuseFactor = batch.DiffuseFactor;
+            oc.UVScale = mUVScale;
+            oc.UVOffset = mUVOffset;
+            oc.DisplacementScale = Config::DisplacementScale;
+            oc.TessMin = (float)factor;
+            mObjectCB->CopyData(0, oc);
+            cmdList->SetGraphicsRootConstantBufferView(0, mObjectCB->Resource()->GetGPUVirtualAddress());
+
+            ID3D12DescriptorHeap* heap = batch.SrvHeap.Get();
+            cmdList->SetDescriptorHeaps(1, &heap);
+            cmdList->SetGraphicsRootDescriptorTable(1, batch.SrvHeap->GetGPUDescriptorHandleForHeapStart());
+            cmdList->DrawIndexedInstanced(n * 3, 1, batch.StartIndexLocation + done * 3, 0, 0);
+
+            cmdList->SOSetTargets(0, 0, nullptr);
+            auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+                chunk.Buffer.Get(),
+                D3D12_RESOURCE_STATE_STREAM_OUT,
+                D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+            cmdList->ResourceBarrier(1, &barrier);
+
+            chunk.View.BufferLocation = chunk.Buffer->GetGPUVirtualAddress();
+            chunk.View.SizeInBytes = (UINT)byteSize;
+            chunk.View.StrideInBytes = stride;
+            mBakedTriangleCount += vertexCount / 3;
+            mBakedChunks.push_back(std::move(chunk));
+            done += n;
+        }
+    }
+
+    return !mBakedChunks.empty();
 }
+
 
 std::shared_ptr<Texture> SponzaObject::LoadDisplacement(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, const std::string& albedoPath)
 {
@@ -391,11 +372,6 @@ std::shared_ptr<Texture> SponzaObject::LoadDisplacement(ID3D12Device* device, ID
         return mFlatHeight;
     }
 
-    auto cpu = std::make_shared<HeightMapCpu>();
-    cpu->Width = w;
-    cpu->Height = h;
-    cpu->Lum.resize((size_t)w * h);
-
     for (size_t i = 0; i < pixels.size(); i += 4)
     {
         float lum = (pixels[i] * 0.299f + pixels[i + 1] * 0.587f + pixels[i + 2] * 0.114f) / 255.0f;
@@ -404,7 +380,6 @@ std::shared_ptr<Texture> SponzaObject::LoadDisplacement(ID3D12Device* device, ID
         pixels[i + 1] = v;
         pixels[i + 2] = v;
         pixels[i + 3] = 255;
-        cpu->Lum[i / 4] = v;
     }
 
     auto tex = std::make_shared<Texture>();
@@ -415,7 +390,6 @@ std::shared_ptr<Texture> SponzaObject::LoadDisplacement(ID3D12Device* device, ID
     }
 
     mDisplacementCache[albedoPath] = tex;
-    mHeightCpuCache[albedoPath] = cpu;
     return tex;
 }
 
@@ -481,7 +455,6 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
         std::shared_ptr<Texture> Diffuse;
         std::shared_ptr<Texture> Normal;
         std::shared_ptr<Texture> Displacement;
-        std::shared_ptr<HeightMapCpu> HeightCpu;
         XMFLOAT4 Kd = { 1.0f, 1.0f, 1.0f, 1.0f };
         float Metallic = 0.0f;
         float Roughness = 0.55f;
@@ -493,7 +466,7 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
         auto white = mTextureManager->GetWhiteTexture();
         if (!white)
             return false;
-        matTable.push_back({ white, mFlatNormal, mFlatHeight, mFlatHeightCpu, XMFLOAT4(0.75f, 0.75f, 0.75f, 1.0f), 0.0f, 0.55f });
+        matTable.push_back({ white, mFlatNormal, mFlatHeight, XMFLOAT4(0.75f, 0.75f, 0.75f, 1.0f), 0.0f, 0.55f });
     }
     else
     {
@@ -527,7 +500,6 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
             }
 
             auto disp = LoadDisplacement(device, cmdList, albedoPath);
-            auto dispCpu = HeightCpuFor(albedoPath);
             float ns = (float)m.shininess;
             float rough = 1.0f - (std::max)(0.0f, (std::min)(1.0f, ns / 256.0f));
             if (ns <= 1.0f)
@@ -538,7 +510,7 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
             if (nm.find("metal") != std::string::npos || nm.find("gold") != std::string::npos ||
                 nm.find("bronze") != std::string::npos || nm.find("chain") != std::string::npos)
                 metal = 0.85f;
-            matTable.push_back({ diffuse, normal, disp, dispCpu, kd, metal, rough });
+            matTable.push_back({ diffuse, normal, disp, kd, metal, rough });
         }
     }
 
@@ -570,7 +542,6 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
         batch.DiffuseTexture = matTable[mid].Diffuse;
         batch.NormalTexture = matTable[mid].Normal;
         batch.DisplacementTexture = matTable[mid].Displacement;
-        batch.HeightCpu = matTable[mid].HeightCpu;
         batch.DiffuseFactor = matTable[mid].Kd;
         batch.Metallic = matTable[mid].Metallic;
         batch.Roughness = matTable[mid].Roughness;
@@ -829,10 +800,48 @@ bool SponzaObject::LoadModel(ID3D12Device* device, ID3D12GraphicsCommandList* cm
     {
         try
         {
-            mBaked = BakeTessellation(device, cmdList, vertices, indices, Config::BakeTessFactor);
+            D3DApp::GetApp()->SubmitAndResetCommandList();
+            mGeometry->VertexBufferUploader.Reset();
+            mGeometry->IndexBufferUploader.Reset();
+            if (mTextureManager)
+                mTextureManager->ReleaseUploads();
+            if (mFlatNormal)
+                mFlatNormal->ReleaseUpload();
+            if (mFlatHeight)
+                mFlatHeight->ReleaseUpload();
+            for (auto& entry : mDisplacementCache)
+            {
+                if (entry.second)
+                    entry.second->ReleaseUpload();
+            }
+            for (auto& batch : mMaterialBatches)
+            {
+                if (batch.DiffuseTexture)
+                    batch.DiffuseTexture->ReleaseUpload();
+                if (batch.NormalTexture)
+                    batch.NormalTexture->ReleaseUpload();
+                if (batch.DisplacementTexture)
+                    batch.DisplacementTexture->ReleaseUpload();
+            }
+
+            if (mRendering)
+            {
+                mRendering->ApplyTessellationCapture(cmdList);
+                mBaked = CaptureTessellation(device, cmdList);
+            }
         }
         catch (const std::bad_alloc&)
         {
+            D3DApp::GetApp()->DiscardPendingCommandList();
+            mBakedChunks.clear();
+            mBakedTriangleCount = 0;
+            mBaked = false;
+        }
+        catch (const DxException&)
+        {
+            D3DApp::GetApp()->DiscardPendingCommandList();
+            mBakedChunks.clear();
+            mBakedTriangleCount = 0;
             mBaked = false;
         }
     }

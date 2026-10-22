@@ -15,7 +15,7 @@ Scene::Scene()
 {
 }
 
-bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)
+bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering)
 {
     mTextureManager = textureManager;
 
@@ -24,6 +24,7 @@ bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
     sponza->SetRotation(0.0f, 0.0f, 0.0f);
     sponza->SetScale(1.0f, 1.0f, 1.0f);
     sponza->SetCullable(false);
+    sponza->SetRenderingSystem(rendering);
     if (!sponza->Initialize(device, cmdList, textureManager))
         return false;
     AddObject(std::move(sponza));

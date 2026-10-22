@@ -18,6 +18,7 @@ public:
     bool CreateFromRGBA8(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, UINT width, UINT height, const void* rgbaPixels);
     static bool DecodeImageRGBA(const std::string& filename, std::vector<uint8_t>& outRgba, UINT& width, UINT& height);
     void Shutdown();
+    void ReleaseUpload() { mUploadBuffer.Reset(); }
 
     ID3D12Resource* GetResource() const { return mTexture.Get(); }
     ID3D12DescriptorHeap* GetDescriptorHeap() const { return mDescriptorHeap.Get(); }

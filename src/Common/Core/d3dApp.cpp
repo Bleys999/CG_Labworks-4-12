@@ -398,12 +398,49 @@ bool D3DApp::InitDirect3D()
 
 ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(&mdxgiFactory)));
 
-HRESULT hardwareResult = D3D12CreateDevice(
-    nullptr,
-    D3D_FEATURE_LEVEL_12_0,
-    IID_PPV_ARGS(&md3dDevice));
+ComPtr<IDXGIAdapter1> adapter;
+for (UINT i = 0; mdxgiFactory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i)
+{
+    DXGI_ADAPTER_DESC1 desc = {};
+    adapter->GetDesc1(&desc);
+    if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+    {
+        adapter.Reset();
+        continue;
+    }
 
-if (FAILED(hardwareResult))
+    ComPtr<ID3D12Device> device;
+    if (FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device))))
+    {
+        adapter.Reset();
+        continue;
+    }
+
+    ComPtr<ID3D12CommandQueue> queue;
+    D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+    queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    if (FAILED(device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue))))
+    {
+        adapter.Reset();
+        continue;
+    }
+
+    ComPtr<ID3D12Fence> fence;
+    device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+    queue->Signal(fence.Get(), 1);
+    HANDLE eventHandle = CreateEventEx(nullptr, FALSE, FALSE, EVENT_ALL_ACCESS);
+    fence->SetEventOnCompletion(1, eventHandle);
+    DWORD wait = WaitForSingleObject(eventHandle, 3000);
+    CloseHandle(eventHandle);
+    if (wait == WAIT_OBJECT_0 && SUCCEEDED(device->GetDeviceRemovedReason()))
+    {
+        md3dDevice = device;
+        break;
+    }
+    adapter.Reset();
+}
+
+if (md3dDevice == nullptr)
 {
     ComPtr<IDXGIAdapter> pWarpAdapter;
     ThrowIfFailed(mdxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&pWarpAdapter)));
@@ -435,7 +472,7 @@ m4xMsaaQuality = msQualityLevels.NumQualityLevels;
 assert(m4xMsaaQuality > 0);
 
 #ifdef _DEBUG
-LogAdapters();
+    LogAdapters();
 #endif
 
 CreateCommandObjects();
@@ -491,6 +528,23 @@ void D3DApp::CreateSwapChain()
         mCommandQueue.Get(),
         &sd,
         mSwapChain.GetAddressOf()));
+}
+
+void D3DApp::SubmitAndResetCommandList()
+{
+    ThrowIfFailed(mCommandList->Close());
+    ID3D12CommandList* lists[] = { mCommandList.Get() };
+    mCommandQueue->ExecuteCommandLists(1, lists);
+    FlushCommandQueue();
+    ThrowIfFailed(mDirectCmdListAlloc->Reset());
+    ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
+}
+
+void D3DApp::DiscardPendingCommandList()
+{
+    ThrowIfFailed(mCommandList->Close());
+    ThrowIfFailed(mDirectCmdListAlloc->Reset());
+    ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
 }
 
 void D3DApp::FlushCommandQueue()
@@ -616,6 +670,8 @@ void D3DApp::LogOutputDisplayModes(IDXGIOutput* output, DXGI_FORMAT format)
     UINT flags = 0;
 
     output->GetDisplayModeList(format, flags, &count, nullptr);
+    if (count == 0)
+        return;
 
     std::vector<DXGI_MODE_DESC> modeList(count);
     output->GetDisplayModeList(format, flags, &count, &modeList[0]);

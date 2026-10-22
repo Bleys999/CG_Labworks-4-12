@@ -33,6 +33,8 @@ public:
     bool GetVsyncEnabled()const;
 
     int Run();
+    void SubmitAndResetCommandList();
+    void DiscardPendingCommandList();
 
     virtual bool Initialize();
     virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

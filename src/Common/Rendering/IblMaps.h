@@ -11,6 +11,12 @@ public:
     ID3D12Resource* Prefilter() const { return mPrefilter.Get(); }
     ID3D12Resource* BrdfLut() const { return mBrdfLut.Get(); }
     UINT PrefilterMipCount() const { return mPrefilterMips; }
+    void ReleaseUploads()
+    {
+        mIrradianceUpload.Reset();
+        mPrefilterUpload.Reset();
+        mBrdfUpload.Reset();
+    }
 
 private:
     bool CreateCube(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,

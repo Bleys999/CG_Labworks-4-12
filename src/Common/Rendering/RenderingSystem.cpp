@@ -154,6 +154,12 @@ void RenderingSystem::ApplyTessellationPass(ID3D12GraphicsCommandList* cmdList) 
     cmdList->SetPipelineState(mTessBaked ? mTessBakedPSO.Get() : mTessellationPSO.Get());
 }
 
+void RenderingSystem::ApplyTessellationCapture(ID3D12GraphicsCommandList* cmdList) const
+{
+    cmdList->SetGraphicsRootSignature(mTessellationRootSignature.Get());
+    cmdList->SetPipelineState(mTessCapturePSO.Get());
+}
+
 void RenderingSystem::ApplyShadowPass(ID3D12GraphicsCommandList* cmdList) const
 {
     cmdList->SetGraphicsRootSignature(mShadowRootSignature.Get());
@@ -393,6 +399,10 @@ void RenderingSystem::BuildTessellationPass(ID3D12Device* device)
     Compile("DS", "ds_5_0", mTessDs);
     Compile("PS", "ps_5_0", mTessPs);
     Compile("VSBaked", "vs_5_0", mTessBakedVs);
+    Compile("VSBake", "vs_5_0", mTessBakeVs);
+    Compile("HSBake", "hs_5_0", mTessBakeHs);
+    Compile("DSBake", "ds_5_0", mTessBakeDs);
+    Compile("GSBake", "gs_5_0", mTessBakeGs);
 
     CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
 
@@ -416,7 +426,8 @@ void RenderingSystem::BuildTessellationPass(ID3D12Device* device)
         0);
 
     CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 1, &samplerDesc,
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_STREAM_OUTPUT);
 
     ComPtr<ID3DBlob> serializedRootSig;
     ComPtr<ID3DBlob> errorBlob;
@@ -459,6 +470,43 @@ void RenderingSystem::BuildTessellationPass(ID3D12Device* device)
     psoDesc.DS = { nullptr, 0 };
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mTessBakedPSO)));
+
+    D3D12_SO_DECLARATION_ENTRY soDecl[] =
+    {
+        { 0, "POSITION", 0, 0, 3, 0 },
+        { 0, "NORMAL", 0, 0, 3, 0 },
+        { 0, "TANGENT", 0, 0, 3, 0 },
+        { 0, "TEXCOORD", 0, 0, 2, 0 },
+    };
+    UINT soStride = sizeof(TessVertex);
+
+    D3D12_STREAM_OUTPUT_DESC soDesc = {};
+    soDesc.pSODeclaration = soDecl;
+    soDesc.NumEntries = _countof(soDecl);
+    soDesc.pBufferStrides = &soStride;
+    soDesc.NumStrides = 1;
+    soDesc.RasterizedStream = 0xffffffffu;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC captureDesc = {};
+    captureDesc.InputLayout = { mTessellationInputLayout.data(), (UINT)mTessellationInputLayout.size() };
+    captureDesc.pRootSignature = mTessellationRootSignature.Get();
+    captureDesc.VS = { reinterpret_cast<BYTE*>(mTessBakeVs->GetBufferPointer()), mTessBakeVs->GetBufferSize() };
+    captureDesc.HS = { reinterpret_cast<BYTE*>(mTessBakeHs->GetBufferPointer()), mTessBakeHs->GetBufferSize() };
+    captureDesc.DS = { reinterpret_cast<BYTE*>(mTessBakeDs->GetBufferPointer()), mTessBakeDs->GetBufferSize() };
+    captureDesc.GS = { reinterpret_cast<BYTE*>(mTessBakeGs->GetBufferPointer()), mTessBakeGs->GetBufferSize() };
+    captureDesc.StreamOutput = soDesc;
+    captureDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    captureDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    captureDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    captureDesc.DepthStencilState.DepthEnable = FALSE;
+    captureDesc.DepthStencilState.StencilEnable = FALSE;
+    captureDesc.SampleMask = UINT_MAX;
+    captureDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+    captureDesc.NumRenderTargets = 0;
+    captureDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    captureDesc.SampleDesc.Count = 1;
+    captureDesc.SampleDesc.Quality = 0;
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&captureDesc, IID_PPV_ARGS(&mTessCapturePSO)));
 }
 
 void RenderingSystem::CreateShadowMaps(ID3D12Device* device)

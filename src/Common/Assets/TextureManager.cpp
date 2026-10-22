@@ -62,6 +62,17 @@ std::shared_ptr<Texture> TextureManager::GetTexture(const std::string& filename)
     return nullptr;
 }
 
+void TextureManager::ReleaseUploads()
+{
+    for (auto& entry : mTextures)
+    {
+        if (entry.second)
+            entry.second->ReleaseUpload();
+    }
+    if (mWhiteTexture)
+        mWhiteTexture->ReleaseUpload();
+}
+
 std::shared_ptr<Texture> TextureManager::GetWhiteTexture()
 {
     if (mWhiteTexture)

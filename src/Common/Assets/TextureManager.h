@@ -16,6 +16,7 @@ public:
     std::shared_ptr<Texture> LoadTexture(const std::string& filename);
     std::shared_ptr<Texture> GetTexture(const std::string& filename);
     std::shared_ptr<Texture> GetWhiteTexture();
+    void ReleaseUploads();
 
 private:
     ID3D12Device* mDevice;

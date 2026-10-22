@@ -9,6 +9,7 @@
 #include <memory>
 
 class TextureManager;
+class RenderingSystem;
 class ChandelierObject;
 
 class Scene
@@ -17,7 +18,7 @@ public:
     Scene();
     ~Scene() = default;
 
-    bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
+    bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering);
     void Update(const GameTimer& gt, const Camera& camera);
     void Draw(ID3D12GraphicsCommandList* cmdList, const Camera& camera);
     void DrawTessellated(ID3D12GraphicsCommandList* cmdList, const Camera& camera);

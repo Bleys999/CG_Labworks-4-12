@@ -63,7 +63,9 @@ bool MainApp::Initialize()
     if (!mRendering.Initialize(md3dDevice.Get())) return false;
     if (!mRendering.InitIbl(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mParticles.Initialize(md3dDevice.Get(), mCommandList.Get())) return false;
-    if (!mScene.Initialize(md3dDevice.Get(), mCommandList.Get(), &mTextureManager)) return false;
+    SubmitAndResetCommandList();
+    mRendering.ReleaseIblUploads();
+    if (!mScene.Initialize(md3dDevice.Get(), mCommandList.Get(), &mTextureManager, &mRendering)) return false;
     if (GameObject* sponza = mScene.GetObject("Sponza"))
     {
         mRendering.SetShadowCasterBounds(sponza->GetWorldBounds());

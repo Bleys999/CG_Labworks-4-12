@@ -63,6 +63,7 @@ class RenderingSystem
 public:
     bool Initialize(ID3D12Device* device);
     bool InitIbl(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
+    void ReleaseIblUploads() { mIbl.ReleaseUploads(); }
     void Resize(ID3D12Device* device, UINT width, UINT height);
 
     GBuffer& GetGBuffer() { return mGBuffer; }
@@ -71,6 +72,7 @@ public:
     ID3D12PipelineState* GetGeometryPSO() const { return mGeometryPSO.Get(); }
 
     void ApplyTessellationPass(ID3D12GraphicsCommandList* cmdList) const;
+    void ApplyTessellationCapture(ID3D12GraphicsCommandList* cmdList) const;
     ID3D12PipelineState* GetTessellationPSO() const { return mTessellationPSO.Get(); }
     void SetTessBaked(bool baked) { mTessBaked = baked; }
     bool IsTessBaked() const { return mTessBaked; }
@@ -137,7 +139,12 @@ private:
     Microsoft::WRL::ComPtr<ID3DBlob> mTessDs;
     Microsoft::WRL::ComPtr<ID3DBlob> mTessPs;
     Microsoft::WRL::ComPtr<ID3DBlob> mTessBakedVs;
+    Microsoft::WRL::ComPtr<ID3DBlob> mTessBakeVs;
+    Microsoft::WRL::ComPtr<ID3DBlob> mTessBakeHs;
+    Microsoft::WRL::ComPtr<ID3DBlob> mTessBakeDs;
+    Microsoft::WRL::ComPtr<ID3DBlob> mTessBakeGs;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> mTessBakedPSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> mTessCapturePSO;
     bool mTessBaked = false;
     std::vector<D3D12_INPUT_ELEMENT_DESC> mTessellationInputLayout;
 
