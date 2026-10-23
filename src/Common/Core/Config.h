@@ -39,8 +39,8 @@ struct Config
     static constexpr UINT ParticleMaxCount = 16384;
     static constexpr UINT ParticleEmitPerFrame = 96;
     static constexpr float ParticleLifetime = 3.2f;
-    static constexpr float ParticleSizeMin = 0.5f;
-    static constexpr float ParticleSizeMax = 1.0f;
+    static constexpr float ParticleSizeMin = 1.5f;
+    static constexpr float ParticleSizeMax = 10.0f;
     static constexpr float ParticleEmitSpeed = 20.0f;
     static constexpr float ParticleEmitSpread = 10.0f;
     static constexpr float ParticleGravity = -12.0f;

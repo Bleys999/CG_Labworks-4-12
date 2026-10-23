@@ -46,6 +46,7 @@ private:
     bool mPrevF8 = false;
     bool mPrevF9 = false;
     bool mPrevF10 = false;
+    bool mPrevR = false;
 };
 
 MainApp::MainApp(HINSTANCE hInstance) : D3DApp(hInstance) {}
@@ -107,6 +108,7 @@ void MainApp::Update(const GameTimer& gt)
     const bool f8 = mInput.IsKeyDown(VK_F8);
     const bool f9 = mInput.IsKeyDown(VK_F9);
     const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N') || mInput.IsKeyDown('n');
+    const bool r = mInput.IsKeyDown('R') || mInput.IsKeyDown('r');
     if (f3 && !mPrevF3)
     {
         mScene.ToggleFrustumCulling();
@@ -147,6 +149,11 @@ void MainApp::Update(const GameTimer& gt)
         mRendering.CycleNdfMode();
         RefreshWindowCaption();
     }
+    if (r && !mPrevR)
+    {
+        mRendering.ToggleFisheye();
+        RefreshWindowCaption();
+    }
     mPrevF3 = f3;
     mPrevF4 = f4;
     mPrevF5 = f5;
@@ -155,6 +162,7 @@ void MainApp::Update(const GameTimer& gt)
     mPrevF8 = f8;
     mPrevF9 = f9;
     mPrevF10 = f10;
+    mPrevR = r;
 
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
@@ -274,6 +282,7 @@ void MainApp::RefreshWindowCaption()
         L"  F4 octree:" + octree +
         L"  F5/F6/F7  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
         L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +
+        L"  R fisheye:" + std::wstring(mRendering.IsFisheyeEnabled() ? L"ON" : L"OFF") +
         L"  tess:" + std::wstring(mRendering.IsTessBaked() ? L"BAKED" : L"LIVE") +
         L"  lod1>" + std::to_wstring((int)Config::BillboardLodDistance) +
         L"  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +

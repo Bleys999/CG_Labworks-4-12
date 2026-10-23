@@ -332,6 +332,7 @@ void RenderingSystem::DrawPostProcess(
     pc.FogStrength = mFogEnabled ? Config::FogStrength : 0.0f;
     pc.PostEnable = 1.0f;
     pc.EdgeStrength = mEdgeEnabled ? Config::EdgeStrength : 0.0f;
+    pc.Fisheye = mFisheyeEnabled ? 1.0f : 0.0f;
     pc.InvViewProj = mLightingCpu.InvViewProj;
     mPostCB->CopyData(0, pc);
 

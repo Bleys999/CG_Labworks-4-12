@@ -19,41 +19,32 @@ cbuffer cbPost : register(b0)
     float gFogStrength;
     float gPostEnable;
     float gEdgeStrength;
-    float gPad;
+    float gFisheye;
     float4x4 gInvViewProj;
 };
 
-float Luma(float3 c)
+float2 FisheyeUV(float2 uv, out bool inside)
 {
-    return dot(c, float3(0.2126f, 0.7152f, 0.0722f));
-}
+    inside = true;
+    if (gFisheye <= 0.0f)
+        return uv;
 
-float3 ApplyBloom(float3 color, float2 uv)
-{
-    if (gBloomIntensity <= 0.0f)
-        return color;
-
-    float2 texel = gInvScreenSize;
-    float3 acc = 0.0f;
-    float wsum = 0.0f;
-
-    [unroll]
-    for (int y = -2; y <= 2; ++y)
+    float aspect = gInvScreenSize.y / max(gInvScreenSize.x, 1e-6f);
+    float2 p = uv * 2.0f - 1.0f;
+    p.x *= aspect;
+    float r = length(p);
+    const float lens = 1.05f;
+    if (r > lens)
     {
-        [unroll]
-        for (int x = -2; x <= 2; ++x)
-        {
-            float2 o = float2(x, y) * texel * 1.6f;
-            float3 s = gScene.SampleLevel(gLinearClamp, uv + o, 0).rgb;
-            float lum = Luma(s);
-            float3 bright = s * saturate(lum - gBloomThreshold);
-            float w = exp(-0.35f * (x * x + y * y));
-            acc += bright * w;
-            wsum += w;
-        }
+        inside = false;
+        return uv;
     }
 
-    return color + (acc / max(wsum, 1e-4f)) * gBloomIntensity;
+    const float k = 1.45f;
+    float nr = atan(r * k) / k;
+    p *= nr / max(r, 1e-5f);
+    p.x /= aspect;
+    return p * 0.5f + 0.5f;
 }
 
 float3 ApplyFog(float3 color, float depth, float3 worldPos, float3 albedo, float3 normalEnc)
@@ -132,15 +123,19 @@ float3 ApplyEdges(float3 color, float2 uv)
 
 float4 PS(FSOut pin) : SV_Target
 {
-    float3 color = gScene.Sample(gLinearClamp, pin.TexC).rgb;
-    float3 albedo = gAlbedo.Sample(gPointClamp, pin.TexC).rgb;
-    float3 normalEnc = gNormal.Sample(gPointClamp, pin.TexC).xyz;
-    float depth = gDepth.Sample(gPointClamp, pin.TexC).r;
-    float3 worldPos = ReconstructWorld(pin.TexC, depth, gInvViewProj);
+    bool inside = true;
+    float2 uv = FisheyeUV(pin.TexC, inside);
+    if (!inside)
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
 
-    color = ApplyBloom(color, pin.TexC);
+    float3 color = gScene.Sample(gLinearClamp, uv).rgb;
+    float3 albedo = gAlbedo.Sample(gPointClamp, uv).rgb;
+    float3 normalEnc = gNormal.Sample(gPointClamp, uv).xyz;
+    float depth = gDepth.Sample(gPointClamp, uv).r;
+    float3 worldPos = ReconstructWorld(uv, depth, gInvViewProj);
+
     color = ApplyFog(color, depth, worldPos, albedo, normalEnc);
-    color = ApplyEdges(color, pin.TexC);
+    color = ApplyEdges(color, uv);
 
     return float4(saturate(ToneMap(color)), 1.0f);
 }

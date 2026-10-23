@@ -48,7 +48,7 @@ struct PostProcessConstants
     float FogStrength = 0.82f;
     float PostEnable = 1.0f;
     float EdgeStrength = 0.9f;
-    float Pad0 = 0.0f;
+    float Fisheye = 0.0f;
     DirectX::XMFLOAT4X4 InvViewProj = MathHelper::Identity4x4();
     float Pad[32] = {};
 };
@@ -110,6 +110,8 @@ public:
     bool IsFogEnabled() const { return mFogEnabled; }
     void ToggleEdgeEnabled() { mEdgeEnabled = !mEdgeEnabled; }
     bool IsEdgeEnabled() const { return mEdgeEnabled; }
+    void ToggleFisheye() { mFisheyeEnabled = !mFisheyeEnabled; }
+    bool IsFisheyeEnabled() const { return mFisheyeEnabled; }
     void CycleNdfMode() { mNdfMode = (mNdfMode + 1) % 2; }
     UINT GetNdfMode() const { return mNdfMode; }
 
@@ -172,6 +174,7 @@ private:
     std::unique_ptr<UploadBuffer<PostProcessConstants>> mPostCB;
     bool mFogEnabled = true;
     bool mEdgeEnabled = true;
+    bool mFisheyeEnabled = false;
     UINT mNdfMode = 0;
     UINT mSceneWidth = 0;
     UINT mSceneHeight = 0;
