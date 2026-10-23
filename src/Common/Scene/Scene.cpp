@@ -87,7 +87,7 @@ bool Scene::SpawnBulb(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, 
     };
     const Lamp lamps[] =
     {
-        { 0.0f, 5.5f, -9.0f, XMFLOAT3(1.0f, 0.98f, 0.92f), 12.0f, 14.0f },
+        { 12.5f, 15.0f, 12.5f, XMFLOAT3(1.0f, 0.98f, 0.92f), 12.0f, 50.0f }
     };
     const int lampCount = (int)(sizeof(lamps) / sizeof(lamps[0]));
     for (int i = 0; i < lampCount; ++i)
@@ -148,16 +148,44 @@ bool Scene::SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList*
     };
     const Showcase show[] =
     {
-        { -6.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.97f, 0.98f, 1.00f, 1.0f), 1.0f, 0.16f },
-        { -3.75f, 1.35f, -10.0f, 1.15f, XMFLOAT4(1.00f, 0.82f, 0.22f, 1.0f), 1.0f, 0.20f },
-        { -1.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.95f, 0.64f, 0.54f, 1.0f), 1.0f, 0.24f },
-        {  1.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(1.00f, 0.78f, 0.18f, 1.0f), 1.0f, 0.18f },
-        {  3.75f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.62f, 0.72f, 0.88f, 1.0f), 1.0f, 0.18f },
-        {  6.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.8f, 0.2f, 0.58f, 1.0f), 1.0f, 0.22f },
-        {  6.25f, 10.f, -20.0f, 1.15f, XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f), 0.0f, 0.1f },
-        {  6.25f, 10.f, -10.0f, 1.15f, XMFLOAT4(0.56f, 0.56f, 0.58f, 1.0f), 1.0f, 0.99f }
+        { 0.0f, 1.35f, 0.0f, 1.15f, XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f), 1.0f, 1.0f },
+        { 5.0f, 1.35f, 0.0f, 1.15f, XMFLOAT4(0.156f, 0.9f, 0.21f, 1.0f), 0.8f, 1.0f },
+        { 10.0f, 1.35f, 0.0f, 1.15f, XMFLOAT4(0.156f, 0.26f, 0.9f, 1.0f), 0.6f, 1.0f },
+        { 15.0f, 1.35f, 0.0f, 1.15f, XMFLOAT4(0.5f, 0.9f, 0.21f, 1.0f), 0.4f, 1.0f },
+        { 20.0f, 1.35f, 0.0f, 1.15f, XMFLOAT4(0.9f, 0.1f, 0.4f, 1.0f), 0.2f, 1.0f },
+        { 25.0f, 1.35f, 0.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 0.0f, 1.0f },
+        { 0.0f, 1.35f, 5.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 1.0f, 0.8f },
+        { 5.0f, 1.35f, 5.0f, 1.15f, XMFLOAT4(0.156f, 0.9f, 0.21f, 1.0f), 0.8f, 0.8f },
+        { 10.0f, 1.35f, 5.0f, 1.15f, XMFLOAT4(0.156f, 0.26f, 0.9f, 1.0f), 0.6f, 0.8f },
+        { 15.0f, 1.35f, 5.0f, 1.15f, XMFLOAT4(0.5f, 0.9f, 0.21f, 1.0f), 0.4f, 0.8f },
+        { 20.0f, 1.35f, 5.0f, 1.15f, XMFLOAT4(0.9f, 0.1f, 0.4f, 1.0f), 0.2f, 0.8f },
+        { 25.0f, 1.35f, 5.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 0.0f, 0.8f },
+        { 0.0f, 1.35f, 10.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 1.0f, 0.6f },
+        { 5.0f, 1.35f, 10.0f, 1.15f, XMFLOAT4(0.156f, 0.9f, 0.21f, 1.0f), 0.8f, 0.6f },
+        { 10.0f, 1.35f, 10.0f, 1.15f, XMFLOAT4(0.156f, 0.26f, 0.9f, 1.0f), 0.6f, 0.6f },
+        { 15.0f, 1.35f, 10.0f, 1.15f, XMFLOAT4(0.5f, 0.9f, 0.21f, 1.0f), 0.4f, 0.6f },
+        { 20.0f, 1.35f, 10.0f, 1.15f, XMFLOAT4(0.9f, 0.1f, 0.4f, 1.0f), 0.2f, 0.6f },
+        { 25.0f, 1.35f, 10.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 0.0f, 0.6f },
+        { 0.0f, 1.35f, 15.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 1.0f, 0.4f },
+        { 5.0f, 1.35f, 15.0f, 1.15f, XMFLOAT4(0.156f, 0.9f, 0.21f, 1.0f), 0.8f, 0.4f },
+        { 10.0f, 1.35f, 15.0f, 1.15f, XMFLOAT4(0.156f, 0.26f, 0.9f, 1.0f), 0.6f, 0.4f },
+        { 15.0f, 1.35f, 15.0f, 1.15f, XMFLOAT4(0.5f, 0.9f, 0.21f, 1.0f), 0.4f, 0.4f },
+        { 20.0f, 1.35f, 15.0f, 1.15f, XMFLOAT4(0.9f, 0.1f, 0.4f, 1.0f), 0.2f, 0.4f },
+        { 25.0f, 1.35f, 15.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 0.0f, 0.4f },
+        { 0.0f, 1.35f, 20.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 1.0f, 0.2f },
+        { 5.0f, 1.35f, 20.0f, 1.15f, XMFLOAT4(0.156f, 0.9f, 0.21f, 1.0f), 0.8f, 0.2f },
+        { 10.0f, 1.35f, 20.0f, 1.15f, XMFLOAT4(0.156f, 0.26f, 0.9f, 1.0f), 0.6f, 0.2f },
+        { 15.0f, 1.35f, 20.0f, 1.15f, XMFLOAT4(0.5f, 0.9f, 0.21f, 1.0f), 0.4f, 0.2f },
+        { 20.0f, 1.35f, 20.0f, 1.15f, XMFLOAT4(0.9f, 0.1f, 0.4f, 1.0f), 0.2f, 0.2f },
+        { 25.0f, 1.35f, 20.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 0.0f, 0.2f },
+        { 0.0f, 1.35f, 25.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 1.0f, 0.0f },
+        { 5.0f, 1.35f, 25.0f, 1.15f, XMFLOAT4(0.156f, 0.9f, 0.21f, 1.0f), 0.8f, 0.0f },
+        { 10.0f, 1.35f, 25.0f, 1.15f, XMFLOAT4(0.156f, 0.26f, 0.9f, 1.0f), 0.6f, 0.0f },
+        { 15.0f, 1.35f, 25.0f, 1.15f, XMFLOAT4(0.5f, 0.9f, 0.21f, 1.0f), 0.4f, 0.0f },
+        { 20.0f, 1.35f, 25.0f, 1.15f, XMFLOAT4(0.9f, 0.1f, 0.4f, 1.0f), 0.2f, 0.0f },
+        { 25.0f, 1.35f, 25.0f, 1.15f, XMFLOAT4(0.2f, 0.7f, 0.9f, 1.0f), 0.0f, 0.0f }
     };
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 41; ++i)
     {
         auto box = std::make_unique<BoxObject>(std::string("Metal") + std::to_string(i));
         box->SetPosition(show[i].x, show[i].y, show[i].z);
