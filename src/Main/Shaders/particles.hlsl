@@ -13,7 +13,8 @@ cbuffer cbParticleDraw : register(b0)
     float gReceiveShadow;
     float gRoughness;
     float gMetallic;
-    float2 gPadMat;
+    uint gTriCount;
+    float gPadMat;
 };
 
 struct VSOut
@@ -23,13 +24,26 @@ struct VSOut
     float Size : SIZE;
 };
 
+struct MonkeyVert
+{
+    float3 Pos;
+    float Pad0;
+    float3 Normal;
+    float Pad1;
+};
+
+StructuredBuffer<MonkeyVert> gMonkey : register(t1);
+
 struct GSOut
 {
     float4 PosH : SV_POSITION;
     float3 NormalW : NORMAL;
-    float3 PosW : POSITION1;
-    float2 TexC : TEXCOORD;
-    float4 Color : COLOR;
+    float3 Color : COLOR;
+};
+
+cbuffer cbChunk : register(b1)
+{
+    uint gTriStart;
 };
 
 struct GBufferOut
@@ -48,53 +62,39 @@ VSOut VS(uint vid : SV_VertexID)
     return o;
 }
 
-[maxvertexcount(4)]
+[maxvertexcount(84)]
 void GS(point VSOut gin[1], inout TriangleStream<GSOut> triStream)
 {
     float3 center = gin[0].PosW;
-    float halfSize = gin[0].Size * 0.5f;
-    float3 right = gCamRight * halfSize;
-    float3 up = gCamUp * halfSize;
-    float3 n = normalize(-gCamForward);
+    float scale = gin[0].Size;
 
-    float2 corners[4] =
+    [loop]
+    for (uint t = 0; t < 28; ++t)
     {
-        float2(-1.0f, 1.0f),
-        float2(-1.0f, -1.0f),
-        float2(1.0f, 1.0f),
-        float2(1.0f, -1.0f)
-    };
-    float2 uvs[4] =
-    {
-        float2(0.0f, 0.0f),
-        float2(0.0f, 1.0f),
-        float2(1.0f, 0.0f),
-        float2(1.0f, 1.0f)
-    };
+        uint tri = gTriStart + t;
+        if (tri >= gTriCount)
+            break;
 
-    [unroll]
-    for (int i = 0; i < 4; ++i)
-    {
-        GSOut v;
-        float3 posW = center + right * corners[i].x + up * corners[i].y;
-        v.PosH = mul(float4(posW, 1.0f), gViewProj);
-        v.NormalW = n;
-        v.PosW = posW;
-        v.TexC = uvs[i];
-        v.Color = gin[0].Color;
-        triStream.Append(v);
+        [unroll]
+        for (uint c = 0; c < 3; ++c)
+        {
+            MonkeyVert mv = gMonkey[tri * 3 + c];
+            GSOut v;
+            float3 posW = center + mv.Pos * scale;
+            v.PosH = mul(float4(posW, 1.0f), gViewProj);
+            v.NormalW = mv.Normal;
+            v.Color = gin[0].Color.rgb;
+            triStream.Append(v);
+        }
+        triStream.RestartStrip();
     }
 }
 
 GBufferOut PS(GSOut pin)
 {
-    float2 d = pin.TexC * 2.0f - 1.0f;
-    if (dot(d, d) > 1.0f)
-        discard;
-
     GBufferOut o;
     float3 n = normalize(pin.NormalW);
-    o.Albedo = float4(pin.Color.rgb, gRoughness);
+    o.Albedo = float4(pin.Color, gRoughness);
     o.Normal = float4(n * 0.5f + 0.5f, gMetallic);
     return o;
 }

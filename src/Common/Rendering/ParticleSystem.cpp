@@ -1,10 +1,25 @@
 #include "ParticleSystem.h"
 #include "GBuffer.h"
 #include "../Core/Config.h"
+#include "../D3D12/d3dUtil.h"
 #include <cstring>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <string>
+#include <cstdlib>
+#include <algorithm>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
+
+struct MonkeyVertex
+{
+    XMFLOAT3 Pos;
+    float Pad0;
+    XMFLOAT3 Normal;
+    float Pad1;
+};
 
 namespace
 {
@@ -56,6 +71,8 @@ bool ParticleSystem::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList*
     mSimCB = std::make_unique<UploadBuffer<ParticleSimConstants>>(device, 1, true);
     mDrawCB = std::make_unique<UploadBuffer<ParticleDrawConstants>>(device, 1, true);
     CreateBuffers(device, cmdList);
+    if (!LoadMonkeyMesh(device, cmdList))
+        return false;
     CreateViews(device);
     BuildCompute(device);
     BuildSort(device);
@@ -87,6 +104,128 @@ void ParticleSystem::CopyCounter(ID3D12GraphicsCommandList* cmdList, ID3D12Resou
     cmdList->CopyBufferRegion(dest, destOffset, mCounters[srcBufferIndex].Get(), 0, sizeof(UINT));
     Transition(cmdList, mCounters[srcBufferIndex].Get(), mCounterState[srcBufferIndex], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     mCounterState[srcBufferIndex] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+}
+
+bool ParticleSystem::LoadMonkeyMesh(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
+{
+    const wchar_t* paths[] =
+    {
+        L"models\\suzanne.obj",
+        L"..\\Debug\\models\\suzanne.obj",
+        L"C:\\Users\\arist\\source\\repos\\CG_Labwork4\\src\\Main\\Debug\\models\\suzanne.obj"
+    };
+
+    std::ifstream in;
+    for (const wchar_t* path : paths)
+    {
+        in.open(path);
+        if (in)
+            break;
+        in.clear();
+    }
+    if (!in)
+        return false;
+
+    std::vector<XMFLOAT3> positions;
+    std::vector<UINT> indices;
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (line.size() < 2)
+            continue;
+        if (line[0] == 'v' && line[1] == ' ')
+        {
+            std::stringstream ss(line.substr(2));
+            XMFLOAT3 p;
+            ss >> p.x >> p.y >> p.z;
+            positions.push_back(p);
+        }
+        else if (line[0] == 'f' && line[1] == ' ')
+        {
+            std::stringstream ss(line.substr(2));
+            std::string tok;
+            std::vector<UINT> face;
+            while (ss >> tok)
+            {
+                int idx = std::atoi(tok.c_str());
+                if (idx > 0)
+                    face.push_back((UINT)(idx - 1));
+            }
+            if (face.size() < 3)
+                continue;
+            for (size_t i = 1; i + 1 < face.size(); ++i)
+            {
+                indices.push_back(face[0]);
+                indices.push_back(face[i]);
+                indices.push_back(face[i + 1]);
+            }
+        }
+    }
+    if (positions.empty() || indices.size() < 3)
+        return false;
+
+    XMFLOAT3 bmin = positions[0];
+    XMFLOAT3 bmax = positions[0];
+    for (const XMFLOAT3& p : positions)
+    {
+        bmin.x = (std::min)(bmin.x, p.x);
+        bmin.y = (std::min)(bmin.y, p.y);
+        bmin.z = (std::min)(bmin.z, p.z);
+        bmax.x = (std::max)(bmax.x, p.x);
+        bmax.y = (std::max)(bmax.y, p.y);
+        bmax.z = (std::max)(bmax.z, p.z);
+    }
+    XMVECTOR center = XMVectorScale(XMVectorAdd(XMLoadFloat3(&bmin), XMLoadFloat3(&bmax)), 0.5f);
+    float maxR = 0.0f;
+    for (const XMFLOAT3& p : positions)
+    {
+        XMVECTOR d = XMVectorSubtract(XMLoadFloat3(&p), center);
+        maxR = (std::max)(maxR, XMVectorGetX(XMVector3Length(d)));
+    }
+    const float fit = 0.5f / (std::max)(maxR, 1e-6f);
+
+    std::vector<XMFLOAT3> normals(positions.size(), XMFLOAT3(0.0f, 0.0f, 0.0f));
+    for (size_t i = 0; i + 2 < indices.size(); i += 3)
+    {
+        UINT i0 = indices[i];
+        UINT i1 = indices[i + 1];
+        UINT i2 = indices[i + 2];
+        if (i0 >= positions.size() || i1 >= positions.size() || i2 >= positions.size())
+            return false;
+        XMVECTOR a = XMLoadFloat3(&positions[i0]);
+        XMVECTOR b = XMLoadFloat3(&positions[i1]);
+        XMVECTOR c = XMLoadFloat3(&positions[i2]);
+        XMVECTOR n = XMVector3Cross(XMVectorSubtract(b, a), XMVectorSubtract(c, a));
+        XMFLOAT3 nf;
+        XMStoreFloat3(&nf, n);
+        auto add = [&](UINT idx)
+        {
+            normals[idx].x += nf.x;
+            normals[idx].y += nf.y;
+            normals[idx].z += nf.z;
+        };
+        add(i0);
+        add(i1);
+        add(i2);
+    }
+
+    std::vector<MonkeyVertex> verts(indices.size());
+    for (size_t i = 0; i < indices.size(); ++i)
+    {
+        UINT idx = indices[i];
+        XMVECTOR p = XMVectorSubtract(XMLoadFloat3(&positions[idx]), center);
+        p = XMVectorScale(p, fit);
+        XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&normals[idx]));
+        XMStoreFloat3(&verts[i].Pos, p);
+        XMStoreFloat3(&verts[i].Normal, n);
+        verts[i].Pad0 = 0.0f;
+        verts[i].Pad1 = 0.0f;
+    }
+
+    mMonkeyTriCount = (UINT)(verts.size() / 3);
+    const UINT64 byteSize = (UINT64)verts.size() * sizeof(MonkeyVertex);
+    mMonkeyBuffer = d3dUtil::CreateDefaultBuffer(device, cmdList, verts.data(), byteSize, mMonkeyUpload);
+    return mMonkeyTriCount > 0;
 }
 
 void ParticleSystem::CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
@@ -166,7 +305,7 @@ void ParticleSystem::CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandLi
 void ParticleSystem::CreateViews(ID3D12Device* device)
 {
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-    heapDesc.NumDescriptors = 9;
+    heapDesc.NumDescriptors = 10;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mHeap)));
@@ -219,6 +358,17 @@ void ParticleSystem::CreateViews(ID3D12Device* device)
     countSrv.Buffer.NumElements = 1;
     countSrv.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
     device->CreateShaderResourceView(mCountBuffer.Get(), &countSrv, cpu);
+    cpu.Offset(1, mSrvUavDescriptorSize);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC monkeySrv = {};
+    monkeySrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    monkeySrv.Format = DXGI_FORMAT_UNKNOWN;
+    monkeySrv.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    monkeySrv.Buffer.FirstElement = 0;
+    monkeySrv.Buffer.NumElements = mMonkeyTriCount * 3;
+    monkeySrv.Buffer.StructureByteStride = sizeof(MonkeyVertex);
+    monkeySrv.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+    device->CreateShaderResourceView(mMonkeyBuffer.Get(), &monkeySrv, cpu);
 }
 
 void ParticleSystem::BuildCompute(ID3D12Device* device)
@@ -289,11 +439,14 @@ void ParticleSystem::BuildDraw(ID3D12Device* device)
     mDrawPs = CompileShaderFile(L"particles.hlsl", "PS", "ps_5_0");
 
     CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    CD3DX12_ROOT_PARAMETER slot[2];
+    CD3DX12_DESCRIPTOR_RANGE meshRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    CD3DX12_ROOT_PARAMETER slot[4];
     slot[0].InitAsConstantBufferView(0);
     slot[1].InitAsDescriptorTable(1, &srvRange);
+    slot[2].InitAsDescriptorTable(1, &meshRange);
+    slot[3].InitAsConstants(1, 1);
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootDesc(2, slot, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+    CD3DX12_ROOT_SIGNATURE_DESC rootDesc(4, slot, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
     ComPtr<ID3DBlob> serialized;
     ComPtr<ID3DBlob> error;
     ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1,
@@ -445,6 +598,7 @@ void ParticleSystem::Draw(ID3D12GraphicsCommandList* cmdList, const Camera& came
     dc.ReceiveShadow = 1.0f;
     dc.Roughness = 0.4f;
     dc.Metallic = 0.0f;
+    dc.TriCount = mMonkeyTriCount;
     mDrawCB->CopyData(0, dc);
 
     Transition(cmdList, mBuffers[append].Get(), mBufferState[append],
@@ -461,8 +615,18 @@ void ParticleSystem::Draw(ID3D12GraphicsCommandList* cmdList, const Camera& came
         6 + append,
         mSrvUavDescriptorSize);
     cmdList->SetGraphicsRootDescriptorTable(1, srvTable);
+    CD3DX12_GPU_DESCRIPTOR_HANDLE monkeyTable(
+        mHeap->GetGPUDescriptorHandleForHeapStart(),
+        9,
+        mSrvUavDescriptorSize);
+    cmdList->SetGraphicsRootDescriptorTable(2, monkeyTable);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-    cmdList->ExecuteIndirect(mDrawSignature.Get(), 1, mDrawArgs.Get(), 0, nullptr, 0);
+    const UINT kTrisPerPass = 28;
+    for (UINT start = 0; start < mMonkeyTriCount; start += kTrisPerPass)
+    {
+        cmdList->SetGraphicsRoot32BitConstant(3, start, 0);
+        cmdList->ExecuteIndirect(mDrawSignature.Get(), 1, mDrawArgs.Get(), 0, nullptr, 0);
+    }
 
     Transition(cmdList, mBuffers[append].Get(), mBufferState[append], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     mBufferState[append] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;

@@ -47,7 +47,7 @@ struct ParticleDrawConstants
     float ReceiveShadow = 1.0f;
     float Roughness = 0.45f;
     float Metallic = 0.0f;
-    float Pad2 = 0.0f;
+    UINT TriCount = 0;
     float Pad3 = 0.0f;
     float Pad[32] = {};
 };
@@ -64,6 +64,7 @@ private:
     void BuildCompute(ID3D12Device* device);
     void BuildSort(ID3D12Device* device);
     void BuildDraw(ID3D12Device* device);
+    bool LoadMonkeyMesh(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     void CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     void CreateViews(ID3D12Device* device);
     void ResetCounter(ID3D12GraphicsCommandList* cmdList, UINT bufferIndex);
@@ -84,6 +85,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> mDispatchArgs;
     Microsoft::WRL::ComPtr<ID3D12Resource> mDrawArgs;
     Microsoft::WRL::ComPtr<ID3D12Resource> mCountBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> mMonkeyBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> mMonkeyUpload;
+    UINT mMonkeyTriCount = 0;
     Microsoft::WRL::ComPtr<ID3D12Resource> mZeroUpload;
     Microsoft::WRL::ComPtr<ID3D12Resource> mDispatchInitUpload;
     Microsoft::WRL::ComPtr<ID3D12Resource> mDrawInitUpload;
