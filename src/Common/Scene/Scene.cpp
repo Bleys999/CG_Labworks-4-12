@@ -1,5 +1,6 @@
 #include "Scene.h"
 #include "../../Main/Objects/Box/BoxObject.h"
+#include "../../Main/Objects/Bulb/BulbObject.h"
 #include "../../Main/Objects/Sponza/SponzaObject.h"
 #include "../../Main/Objects/Chandelier/ChandelierObject.h"
 #include "../Assets/TextureManager.h"
@@ -30,6 +31,8 @@ bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
     AddObject(std::move(sponza));
 
     if (!SpawnScatteredBoxes(device, cmdList, textureManager))
+        return false;
+    if (!SpawnBulb(device, cmdList, textureManager))
         return false;
     if (!SpawnChandeliers(device, cmdList, textureManager))
         return false;
@@ -65,6 +68,39 @@ bool Scene::SpawnChandeliers(ID3D12Device* device, ID3D12GraphicsCommandList* cm
             return false;
         mChandeliers.push_back(lamp.get());
         AddObject(std::move(lamp));
+    }
+    return true;
+}
+
+bool Scene::SpawnBulb(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)
+{
+    mBulbs.clear();
+
+    struct Lamp
+    {
+        float x;
+        float y;
+        float z;
+        XMFLOAT3 color;
+        float intensity;
+        float range;
+    };
+    const Lamp lamps[] =
+    {
+        { 0.0f, 5.5f, -9.0f, XMFLOAT3(1.0f, 0.98f, 0.92f), 12.0f, 14.0f },
+    };
+    const int lampCount = (int)(sizeof(lamps) / sizeof(lamps[0]));
+    for (int i = 0; i < lampCount; ++i)
+    {
+        auto bulb = std::make_unique<BulbObject>("Bulb" + std::to_string(i));
+        bulb->SetPosition(lamps[i].x, lamps[i].y, lamps[i].z);
+        bulb->SetColor(lamps[i].color.x, lamps[i].color.y, lamps[i].color.z);
+        bulb->SetIntensity(lamps[i].intensity);
+        bulb->SetRange(lamps[i].range);
+        if (!bulb->Initialize(device, cmdList, textureManager))
+            return false;
+        mBulbs.push_back(bulb.get());
+        AddObject(std::move(bulb));
     }
     return true;
 }
@@ -117,9 +153,11 @@ bool Scene::SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList*
         { -1.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.95f, 0.64f, 0.54f, 1.0f), 1.0f, 0.24f },
         {  1.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(1.00f, 0.78f, 0.18f, 1.0f), 1.0f, 0.18f },
         {  3.75f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.62f, 0.72f, 0.88f, 1.0f), 1.0f, 0.18f },
-        {  6.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.56f, 0.56f, 0.58f, 1.0f), 1.0f, 0.22f }
+        {  6.25f, 1.35f, -10.0f, 1.15f, XMFLOAT4(0.8f, 0.2f, 0.58f, 1.0f), 1.0f, 0.22f },
+        {  6.25f, 10.f, -20.0f, 1.15f, XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f), 0.0f, 0.1f },
+        {  6.25f, 10.f, -10.0f, 1.15f, XMFLOAT4(0.56f, 0.56f, 0.58f, 1.0f), 1.0f, 0.99f }
     };
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 8; ++i)
     {
         auto box = std::make_unique<BoxObject>(std::string("Metal") + std::to_string(i));
         box->SetPosition(show[i].x, show[i].y, show[i].z);

@@ -2,6 +2,38 @@
 #include <vector>
 #include <wincodec.h>
 
+namespace
+{
+    bool CopyWicPixels(IWICBitmapSource* source, UINT stride, UINT size, BYTE* dst)
+    {
+        if (!source || !dst || size == 0)
+            return false;
+        __try
+        {
+            return SUCCEEDED(source->CopyPixels(nullptr, stride, size, dst));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
+    HRESULT CreateWicBitmap(IWICImagingFactory* factory, IWICBitmapSource* source, IWICBitmap** out)
+    {
+        if (!factory || !source || !out)
+            return E_INVALIDARG;
+        *out = nullptr;
+        __try
+        {
+            return factory->CreateBitmapFromSource(source, WICBitmapCacheOnLoad, out);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return E_FAIL;
+        }
+    }
+}
+
 #pragma comment(lib, "windowscodecs.lib")
 
 using namespace DirectX;
@@ -140,7 +172,7 @@ bool Texture::DecodeImageRGBA(const std::string& filename, std::vector<uint8_t>&
 
     hr = converter->Initialize(
         frame.Get(),
-        GUID_WICPixelFormat32bppRGBA,
+        GUID_WICPixelFormat32bppBGRA,
         WICBitmapDitherTypeNone,
         nullptr,
         0.0f,
@@ -149,13 +181,36 @@ bool Texture::DecodeImageRGBA(const std::string& filename, std::vector<uint8_t>&
     if (FAILED(hr))
         return false;
 
-    converter->GetSize(&width, &height);
+    UINT w = 0;
+    UINT h = 0;
+    hr = converter->GetSize(&w, &h);
+    if (FAILED(hr) || w == 0 || h == 0 || w > 16384 || h > 16384)
+        return false;
 
-    UINT bufferSize = width * height * 4;
-    outRgba.resize(bufferSize);
+    const UINT64 byteCount64 = (UINT64)w * h * 4;
+    if (byteCount64 > 0xffffffffu)
+        return false;
+    const UINT byteCount = (UINT)byteCount64;
 
-    hr = converter->CopyPixels(nullptr, width * 4, bufferSize, outRgba.data());
-    return SUCCEEDED(hr);
+    Microsoft::WRL::ComPtr<IWICBitmap> bitmap;
+    hr = CreateWicBitmap(wicFactory.Get(), converter.Get(), &bitmap);
+    if (FAILED(hr))
+        return false;
+
+    outRgba.resize(byteCount);
+    if (!CopyWicPixels(bitmap.Get(), w * 4, byteCount, outRgba.data()))
+        return false;
+
+    for (UINT i = 0; i + 3 < byteCount; i += 4)
+    {
+        const uint8_t b = outRgba[i];
+        outRgba[i] = outRgba[i + 2];
+        outRgba[i + 2] = b;
+    }
+
+    width = w;
+    height = h;
+    return true;
 }
 
 bool Texture::LoadFromFile(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, const std::string& filename)

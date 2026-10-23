@@ -52,6 +52,9 @@
     <ClCompile Include="Objects\Box\BoxObject.cpp">
       <Filter>Main\Objects\Box</Filter>
     </ClCompile>
+    <ClCompile Include="Objects\Bulb\BulbObject.cpp">
+      <Filter>Main\Objects\Box</Filter>
+    </ClCompile>
     <ClCompile Include="Objects\Chandelier\ChandelierObject.cpp">
       <Filter>Main\Objects\Chandelier</Filter>
     </ClCompile>

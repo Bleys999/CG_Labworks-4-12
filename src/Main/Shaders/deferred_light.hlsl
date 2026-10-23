@@ -7,6 +7,10 @@ Texture2DArray gShadowMaps : register(t3);
 TextureCube gIrradiance : register(t4);
 TextureCube gPrefilter : register(t5);
 Texture2D gBrdfLut : register(t6);
+Texture2D gCascade0 : register(t7);
+Texture2D gCascade1 : register(t8);
+Texture2D gCascade2 : register(t9);
+Texture2D gCascade3 : register(t10);
 SamplerComparisonState gShadowSampler : register(s0);
 SamplerState gBrdfSampler : register(s1);
 SamplerState gIblSampler : register(s2);
@@ -100,15 +104,26 @@ float SampleSunShadow(float3 worldPos)
     return 1.0f;
 }
 
-float3 CascadeColor(uint cascade)
+float3 SampleCascadeTile(uint cascade, float2 uv)
 {
     if (cascade == 0)
-        return float3(1.0f, 0.0f, 0.0f);
+        return gCascade0.Sample(gIblSampler, uv).rgb;
     if (cascade == 1)
-        return float3(0.0f, 1.0f, 0.0f);
+        return gCascade1.Sample(gIblSampler, uv).rgb;
     if (cascade == 2)
-        return float3(1.0f, 1.0f, 0.0f);
-    return float3(0.0f, 0.0f, 1.0f);
+        return gCascade2.Sample(gIblSampler, uv).rgb;
+    return gCascade3.Sample(gIblSampler, uv).rgb;
+}
+
+float3 CascadeTile(uint cascade, float3 worldPos, float3 N)
+{
+    const float scale = 0.01f;
+    float3 w = abs(N);
+    w /= max(w.x + w.y + w.z, 1e-3f);
+    float3 x = SampleCascadeTile(cascade, worldPos.zy * scale);
+    float3 y = SampleCascadeTile(cascade, worldPos.xz * scale);
+    float3 z = SampleCascadeTile(cascade, worldPos.xy * scale);
+    return x * w.x + y * w.y + z * w.z;
 }
 
 float DistributionGGX(float3 N, float3 H, float roughness)
@@ -205,6 +220,7 @@ float4 PS(FSOut pin) : SV_Target
     else
         Lo = DirectLambert(albedo, N, dirL, dirRadiance) * shadow;
 
+    float pointLit = 0.0f;
     uint pointCount = min(gPointCount, MAX_POINT_LIGHTS);
     for (uint i = 0; i < pointCount; ++i)
     {
@@ -212,6 +228,7 @@ float4 PS(FSOut pin) : SV_Target
         float dist = length(toLight);
         float3 L = toLight / max(dist, 1e-5f);
         float atten = DistanceAttenuation(dist, gPointPosRange[i].w);
+        pointLit += atten * saturate(dot(N, L));
         float3 radiance = gPointColorIntensity[i].rgb * gPointColorIntensity[i].a * atten;
         if (useGgx)
             Lo += DirectPBR(albedo, metallic, roughness, N, V, L, radiance);
@@ -219,6 +236,7 @@ float4 PS(FSOut pin) : SV_Target
             Lo += DirectLambert(albedo, N, L, radiance);
     }
 
+    float spotLit = 0.0f;
     uint spotCount = min(gSpotCount, MAX_SPOT_LIGHTS);
     for (uint i = 0; i < spotCount; ++i)
     {
@@ -231,6 +249,7 @@ float4 PS(FSOut pin) : SV_Target
         float cosInner = lerp(cosOuter, 1.0f, 0.38f);
         float cone = smoothstep(cosOuter, cosInner, saturate(dot(-L, spotDir)));
         cone *= cone;
+        spotLit += atten * cone * saturate(dot(N, L));
         float3 radiance = gSpotColorIntensity[i].rgb * gSpotColorIntensity[i].a * atten * cone;
         if (useGgx)
             Lo += DirectPBR(albedo, metallic, roughness, N, V, L, radiance);
@@ -259,7 +278,7 @@ float4 PS(FSOut pin) : SV_Target
     }
 
     if (gDebugMode == 2)
-        Lo = lerp(saturate(Lo + albedo * 0.3f), CascadeColor(cascade), 0.5f);
+        Lo = lerp(CascadeTile(cascade, worldPos, N), Lo, saturate(shadow + spotLit + pointLit));
 
     return float4(Lo, 1.0f);
 }

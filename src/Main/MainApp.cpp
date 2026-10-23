@@ -4,6 +4,7 @@
 #include "../Common/Rendering/RenderingSystem.h"
 #include "../Common/Rendering/ParticleSystem.h"
 #include "Objects/Chandelier/ChandelierObject.h"
+#include "Objects/Bulb/BulbObject.h"
 #include "Objects/Sponza/SponzaObject.h"
 #include "../Common/Core/Input.h"
 #include "../Common/Assets/TextureManager.h"
@@ -62,9 +63,11 @@ bool MainApp::Initialize()
     if (!mTextureManager.Initialize(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mRendering.Initialize(md3dDevice.Get())) return false;
     if (!mRendering.InitIbl(md3dDevice.Get(), mCommandList.Get())) return false;
+    if (!mRendering.LoadCascadeTiles(md3dDevice.Get(), mCommandList.Get())) return false;
     if (!mParticles.Initialize(md3dDevice.Get(), mCommandList.Get())) return false;
     SubmitAndResetCommandList();
     mRendering.ReleaseIblUploads();
+    mRendering.ReleaseCascadeTileUploads();
     if (!mScene.Initialize(md3dDevice.Get(), mCommandList.Get(), &mTextureManager, &mRendering)) return false;
     if (GameObject* sponza = mScene.GetObject("Sponza"))
     {
@@ -156,6 +159,14 @@ void MainApp::Update(const GameTimer& gt)
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
     mScene.Update(gt, mCamera);
+
+    const auto& bulbs = mScene.GetBulbs();
+    UINT bulbCount = (UINT)bulbs.size();
+    if (bulbCount > kMaxPointLights)
+        bulbCount = kMaxPointLights;
+    mRendering.SetPointCount(bulbCount);
+    for (UINT i = 0; i < bulbCount; ++i)
+        mRendering.SetPointLight(i, bulbs[i]->GetLightPosRange(), bulbs[i]->GetLightColorIntensity());
 
     const auto& lamps = mScene.GetChandeliers();
     UINT spotCount = (UINT)lamps.size();
@@ -276,16 +287,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, PSTR cmdLine, in
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 
+    const HRESULT comHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    int code = 0;
     try
     {
         MainApp theApp(hInstance);
         if (!theApp.Initialize())
-            return 0;
-        return theApp.Run();
+            code = 0;
+        else
+            code = theApp.Run();
     }
     catch (DxException& e)
     {
         MessageBox(nullptr, e.ToString().c_str(), L"HR Failed", MB_OK);
-        return 0;
+        code = 0;
     }
+    if (SUCCEEDED(comHr))
+        CoUninitialize();
+    return code;
 }

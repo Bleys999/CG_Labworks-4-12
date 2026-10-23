@@ -2,6 +2,7 @@
 #include "../Core/Config.h"
 #include <cmath>
 #include <algorithm>
+#include <cstring>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -67,6 +68,53 @@ bool RenderingSystem::InitIbl(ID3D12Device* device, ID3D12GraphicsCommandList* c
     return true;
 }
 
+bool RenderingSystem::LoadCascadeTiles(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
+{
+    const char* names[4] = {
+        "monster.png",
+        "cat.png",
+        "Odyssey.png",
+        "minecraft_tree.png"
+    };
+    const uint8_t fallback[4][3] = {
+        { 180, 40, 40 },
+        { 40, 160, 60 },
+        { 210, 180, 40 },
+        { 40, 80, 180 }
+    };
+
+    char exePath[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    char* slash = strrchr(exePath, '\\');
+    if (slash)
+        *slash = 0;
+    const std::string dir = std::string(exePath) + "\\models\\textures\\";
+
+    for (int i = 0; i < 4; ++i)
+    {
+        auto tex = std::make_unique<Texture>();
+        if (!tex->Load(device, cmdList, dir + names[i]))
+        {
+            tex = std::make_unique<Texture>();
+            if (!tex->Create1x1RGBA8(device, cmdList, fallback[i][0], fallback[i][1], fallback[i][2], 255))
+                return false;
+        }
+        mCascadeTiles[i] = std::move(tex);
+    }
+
+    UpdateLightingSrvs(device);
+    return true;
+}
+
+void RenderingSystem::ReleaseCascadeTileUploads()
+{
+    for (int i = 0; i < 4; ++i)
+    {
+        if (mCascadeTiles[i])
+            mCascadeTiles[i]->ReleaseUpload();
+    }
+}
+
 void RenderingSystem::Resize(ID3D12Device* device, UINT width, UINT height)
 {
     mGBuffer.Resize(device, width, height);
@@ -82,13 +130,7 @@ void RenderingSystem::InitDefaultLights()
     mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 6.5f };
     mLightingCpu.AmbientColor = { 0.13f, 0.13f, 0.145f, 1.0f };
 
-    mLightingCpu.PointCount = 3;
-    mLightingCpu.PointPosRange[0] = { 0.0f, 0.2f, 0.0f, 16.0f };
-    mLightingCpu.PointColorIntensity[0] = { 1.0f, 0.55f, 0.22f, 8.0f };
-    mLightingCpu.PointPosRange[1] = { 0.0f, 5.5f, -9.0f, 14.0f };
-    mLightingCpu.PointColorIntensity[1] = { 1.0f, 0.98f, 0.92f, 12.0f };
-    mLightingCpu.PointPosRange[2] = { 6.0f, 3.5f, 2.0f, 12.0f };
-    mLightingCpu.PointColorIntensity[2] = { 0.55f, 0.75f, 1.0f, 9.0f };
+    mLightingCpu.PointCount = 0;
     mLightingCpu.SpotCount = 0;
 }
 
@@ -125,6 +167,19 @@ void RenderingSystem::SetShadowDebugMode(UINT mode)
 void RenderingSystem::SetSpotCount(UINT count)
 {
     mLightingCpu.SpotCount = (std::min)(count, kMaxSpotLights);
+}
+
+void RenderingSystem::SetPointCount(UINT count)
+{
+    mLightingCpu.PointCount = (std::min)(count, kMaxPointLights);
+}
+
+void RenderingSystem::SetPointLight(UINT index, const XMFLOAT4& posRange, const XMFLOAT4& colorIntensity)
+{
+    if (index >= kMaxPointLights)
+        return;
+    mLightingCpu.PointPosRange[index] = posRange;
+    mLightingCpu.PointColorIntensity[index] = colorIntensity;
 }
 
 void RenderingSystem::SetSpotLight(UINT index, const XMFLOAT4& posRange, const XMFLOAT4& dirCosine, const XMFLOAT4& colorIntensity)
@@ -571,11 +626,11 @@ void RenderingSystem::UpdateLightingSrvs(ID3D12Device* device)
     if (!mGBuffer.AlbedoResource() || !mShadowMaps)
         return;
 
-    if (!mLightingSrvHeap || mLightingSrvHeap->GetDesc().NumDescriptors < 7)
+    if (!mLightingSrvHeap || mLightingSrvHeap->GetDesc().NumDescriptors < 11)
     {
         mLightingSrvHeap.Reset();
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 7;
+        heapDesc.NumDescriptors = 11;
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mLightingSrvHeap)));
@@ -646,6 +701,26 @@ void RenderingSystem::UpdateLightingSrvs(ID3D12Device* device)
         lut.Texture2D.MipLevels = 1;
         lut.Texture2D.ResourceMinLODClamp = 0.0f;
         device->CreateShaderResourceView(mIbl.BrdfLut(), &lut, cpu);
+    }
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE tileCpu(mLightingSrvHeap->GetCPUDescriptorHandleForHeapStart());
+    tileCpu.Offset(7, inc);
+    for (int i = 0; i < 4; ++i)
+    {
+        if (!mCascadeTiles[i] || !mCascadeTiles[i]->GetResource())
+        {
+            tileCpu.Offset(1, inc);
+            continue;
+        }
+        D3D12_SHADER_RESOURCE_VIEW_DESC tile = {};
+        tile.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        tile.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        tile.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        tile.Texture2D.MostDetailedMip = 0;
+        tile.Texture2D.MipLevels = 1;
+        tile.Texture2D.ResourceMinLODClamp = 0.0f;
+        device->CreateShaderResourceView(mCascadeTiles[i]->GetResource(), &tile, tileCpu);
+        tileCpu.Offset(1, inc);
     }
 }
 
@@ -842,7 +917,7 @@ void RenderingSystem::BuildLightingPass(ID3D12Device* device)
     mLightingVs = CompileShaderFile(L"deferred_light.hlsl", "VSFullscreen", "vs_5_0");
     mLightingPs = CompileShaderFile(L"deferred_light.hlsl", "PS", "ps_5_0");
 
-    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);
+    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 11, 0);
 
     CD3DX12_ROOT_PARAMETER slotRootParameter[2];
     slotRootParameter[0].InitAsConstantBufferView(0);

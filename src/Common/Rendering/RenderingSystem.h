@@ -3,6 +3,7 @@
 #include "GBuffer.h"
 #include "IblMaps.h"
 #include "../D3D12/d3dUtil.h"
+#include "../Assets/Texture.h"
 #include "../Scene/Camera.h"
 #include <memory>
 #include <vector>
@@ -64,6 +65,8 @@ public:
     bool Initialize(ID3D12Device* device);
     bool InitIbl(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     void ReleaseIblUploads() { mIbl.ReleaseUploads(); }
+    bool LoadCascadeTiles(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
+    void ReleaseCascadeTileUploads();
     void Resize(ID3D12Device* device, UINT width, UINT height);
 
     GBuffer& GetGBuffer() { return mGBuffer; }
@@ -88,6 +91,8 @@ public:
     UINT GetShadowDebugMode() const { return mLightingCpu.DebugMode; }
     void SetShadowCasterBounds(const DirectX::BoundingBox& bounds);
     void SetSpotCount(UINT count);
+    void SetPointCount(UINT count);
+    void SetPointLight(UINT index, const DirectX::XMFLOAT4& posRange, const DirectX::XMFLOAT4& colorIntensity);
     void SetSpotLight(UINT index, const DirectX::XMFLOAT4& posRange, const DirectX::XMFLOAT4& dirCosine, const DirectX::XMFLOAT4& colorIntensity);
 
     void UpdateLightingConstants(const Camera& camera);
@@ -125,6 +130,7 @@ private:
 private:
     GBuffer mGBuffer;
     IblMaps mIbl;
+    std::unique_ptr<Texture> mCascadeTiles[4];
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> mGeometryRootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> mGeometryPSO;

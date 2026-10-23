@@ -11,6 +11,7 @@
 class TextureManager;
 class RenderingSystem;
 class ChandelierObject;
+class BulbObject;
 
 class Scene
 {
@@ -37,9 +38,11 @@ public:
     bool IsFrustumCullingEnabled() const { return mFrustumCulling; }
     bool IsOctreeCullingEnabled() const { return mOctreeCulling; }
     const std::vector<ChandelierObject*>& GetChandeliers() const { return mChandeliers; }
+    const std::vector<BulbObject*>& GetBulbs() const { return mBulbs; }
 
 private:
     bool SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
+    bool SpawnBulb(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     bool SpawnChandeliers(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     void BuildOctree();
     bool ShouldDrawObject(GameObject* object, const DirectX::BoundingFrustum& frustum) const;
@@ -47,6 +50,7 @@ private:
 private:
     std::vector<std::unique_ptr<GameObject>> mGameObjects;
     std::vector<ChandelierObject*> mChandeliers;
+    std::vector<BulbObject*> mBulbs;
     TextureManager* mTextureManager;
     Octree mOctree;
     bool mFrustumCulling = false;
