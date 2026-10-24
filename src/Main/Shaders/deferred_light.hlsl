@@ -257,7 +257,7 @@ float4 PS(FSOut pin) : SV_Target
             Lo += DirectLambert(albedo, N, L, radiance);
     }
 
-    float iblOcc = lerp(0.14f, 1.0f, shadow);
+    float iblOcc = max(lerp(0.14f, 1.0f, shadow), metallic);
     float3 irradiance = gIrradiance.Sample(gIblSampler, N).rgb;
     if (useGgx)
     {

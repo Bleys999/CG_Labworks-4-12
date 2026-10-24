@@ -1,6 +1,7 @@
 #include "Scene.h"
 #include "../../Main/Objects/Box/BoxObject.h"
 #include "../../Main/Objects/Bulb/BulbObject.h"
+#include "../../Main/Objects/Axe/AxeObject.h"
 #include "../../Main/Objects/Sponza/SponzaObject.h"
 #include "../../Main/Objects/Chandelier/ChandelierObject.h"
 #include "../Assets/TextureManager.h"
@@ -33,6 +34,8 @@ bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
     if (!SpawnScatteredBoxes(device, cmdList, textureManager))
         return false;
     if (!SpawnBulb(device, cmdList, textureManager))
+        return false;
+    if (!SpawnAxe(device, cmdList, textureManager, rendering))
         return false;
     if (!SpawnChandeliers(device, cmdList, textureManager))
         return false;
@@ -102,6 +105,21 @@ bool Scene::SpawnBulb(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, 
         mBulbs.push_back(bulb.get());
         AddObject(std::move(bulb));
     }
+    return true;
+}
+
+bool Scene::SpawnAxe(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering)
+{
+    auto axe = std::make_unique<AxeObject>("Axe");
+    axe->SetRenderingSystem(rendering);
+    axe->SetPosition(12.5f, 10.0f, 12.5f);
+    axe->SetRotation(XM_PIDIV2, 0.0f, 0.0f);
+    axe->SetScale(4.0f, 4.0f, 4.0f);
+    axe->SetCullable(true);
+    if (!axe->Initialize(device, cmdList, textureManager))
+        return false;
+    AddObject(std::move(axe));
+    ++mCullableCount;
     return true;
 }
 

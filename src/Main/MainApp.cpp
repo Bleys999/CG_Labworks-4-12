@@ -200,7 +200,8 @@ void MainApp::Draw(const GameTimer& gt)
     ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), mRendering.GetGeometryPSO()));
 
     mRendering.UpdateLightingConstants(mCamera);
-    mParticles.Update(mCommandList.Get(), mCamera, gt);
+    if (Config::ParticlesEnabled)
+        mParticles.Update(mCommandList.Get(), mCamera, gt);
 
     mRendering.BeginShadowPass(mCommandList.Get());
     mRendering.ApplyShadowPass(mCommandList.Get());
@@ -223,7 +224,8 @@ void MainApp::Draw(const GameTimer& gt)
 
     mRendering.ApplyTessellationPass(mCommandList.Get());
     mScene.DrawTessellated(mCommandList.Get(), mCamera);
-    mParticles.Draw(mCommandList.Get(), mCamera);
+    if (Config::ParticlesEnabled)
+        mParticles.Draw(mCommandList.Get(), mCamera);
     RefreshWindowCaption();
 
     gbuffer.EndGeometryPass(mCommandList.Get());

@@ -52,6 +52,9 @@
     <ClCompile Include="Objects\Box\BoxObject.cpp">
       <Filter>Main\Objects\Box</Filter>
     </ClCompile>
+    <ClCompile Include="Objects\Axe\AxeObject.cpp">
+      <Filter>Main\Objects\Box</Filter>
+    </ClCompile>
     <ClCompile Include="Objects\Bulb\BulbObject.cpp">
       <Filter>Main\Objects\Box</Filter>
     </ClCompile>
@@ -118,6 +121,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Objects\Box\BoxObject.h">
+      <Filter>Main\Objects\Box</Filter>
+    </ClInclude>
+    <ClInclude Include="Objects\Axe\AxeObject.h">
       <Filter>Main\Objects\Box</Filter>
     </ClInclude>
     <ClInclude Include="Objects\Chandelier\ChandelierObject.h">
@@ -225,6 +231,9 @@
       <Filter>Shader Files</Filter>
     </None>
     <None Include="Shaders\postprocess.hlsl">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\axe.hlsl">
       <Filter>Shader Files</Filter>
     </None>
   </ItemGroup>

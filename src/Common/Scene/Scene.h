@@ -43,6 +43,7 @@ public:
 private:
     bool SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     bool SpawnBulb(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
+    bool SpawnAxe(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering);
     bool SpawnChandeliers(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     void BuildOctree();
     bool ShouldDrawObject(GameObject* object, const DirectX::BoundingFrustum& frustum) const;
